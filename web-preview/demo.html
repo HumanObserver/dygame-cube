@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>引力方块 · 自动演示</title>
+<style>
+  html,body{margin:0;padding:0;background:#0a0c16;height:100%;overflow:hidden}
+  #game-canvas{display:block;margin:0 auto}
+</style>
+</head>
+<body>
+<script>
+  /* 无头截图确定性保障：rAF 改用 setTimeout 驱动（--virtual-time-budget 下必然推进） */
+  window.requestAnimationFrame = function (cb) { return setTimeout(function () { cb(Date.now()); }, 16); };
+  window.cancelAnimationFrame = function (id) { clearTimeout(id); };
+</script>
+<script src="tt-shim.js"></script>
+<script src="bundle.js"></script>
+<script src="demo.js"></script>
+</body>
+</html>

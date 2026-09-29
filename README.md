@@ -69,6 +69,30 @@ node web-preview/serve.js
 - 好友排行榜依赖开放数据域，浏览器中不可用，自动降级为本机排行；其余玩法与真机一致
 - `serve.js` 启动时自动执行 `build.js`，将 CommonJS 模块打包为 `web-preview/bundle.js`（构建产物，已在 .gitignore 中忽略）
 
+## 自动化演示（脚本对局 + 场景截图）
+
+`web-preview/demo.html`（内联脚本 + `demo.js`）在浏览器中自动播放一局**脚本化确定性对局**：种子随机流（mulberry32(42)）+ 固定虚拟时间线 —— 开局 → 下落前提示 → 下落 → 消行 → 升级 → 游戏结束 → 排行榜。配合无头浏览器的 `--virtual-time-budget`（虚拟时钟，确定性回放）即可自动截取各关键场景：
+
+```powershell
+node web-preview/serve.js   # 先保持服务运行
+# 各帧截图预算(ms)：1-menu=250  2-hint=950  3-fall=4200  4-clear=5150
+#                5-levelup=5750  6-gameover=6500  7-rank=7100
+& "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --headless=new --disable-gpu `
+  --hide-scrollbars --force-device-scale-factor=1 --window-size=390,844 `
+  --user-data-dir="$env:TEMP\gcdemo-hint" --virtual-time-budget=950 `
+  --screenshot=web-preview/shots/2-hint.png "http://127.0.0.1:8737/demo.html"
+```
+
+演示截图（`web-preview/shots/`）：
+
+![主菜单](web-preview/shots/1-menu.png)
+![下落前提示](web-preview/shots/2-hint.png)
+![下落中](web-preview/shots/3-fall.png)
+![消行闪光](web-preview/shots/4-clear.png)
+![升级](web-preview/shots/5-levelup.png)
+![游戏结束](web-preview/shots/6-gameover.png)
+![排行榜](web-preview/shots/7-rank.png)
+
 ## 在抖音开发者工具中运行
 
 1. 下载安装 [抖音开发者工具](https://developer.open-douyin.com/docs/resource/zh-CN/mini-game/develop/developer-instrument/developer-instrument-update-and-download)
