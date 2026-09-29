@@ -1,5 +1,5 @@
 {
-  "appid": "",
+  "appid": "testAppId",
   "projectname": "dygame-cube",
   "description": "引力方块 - 抖音小游戏（四向重力俄罗斯方块变体）",
   "compileType": "game",
@@ -7,5 +7,16 @@
     "es6": true,
     "minified": false,
     "urlCheck": false
+  },
+  "packOptions": {
+    "ignore": [
+      { "type": "folder", "value": "web-preview" },
+      { "type": "folder", "value": "test" },
+      { "type": "file", "value": "README.md" },
+      { "type": "file", "value": "agent.md" },
+      { "type": "file", "value": "上线指南.md" },
+      { "type": "file", "value": ".gitignore" }
+    ],
+    "include": []
   }
 }

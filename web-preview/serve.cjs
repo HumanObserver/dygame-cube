@@ -1,12 +1,12 @@
 /**
- * 浏览器预览静态服务器：node web-preview/serve.js [port]
+ * 浏览器预览静态服务器：node web-preview/serve.cjs [port]
  * 启动时自动打包 bundle.js。默认端口 8737，被占用则自动 +1。
  */
 'use strict';
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const build = require('./build.js');
+const build = require('./build.cjs');
 
 build();
 

@@ -1,6 +1,6 @@
 /**
  * 将 CommonJS 游戏模块打包为浏览器单文件 bundle（零第三方依赖）
- * 用法: node web-preview/build.js  →  生成 web-preview/bundle.js
+ * 用法: node web-preview/build.cjs  →  生成 web-preview/bundle.js
  */
 'use strict';
 const fs = require('fs');
@@ -23,7 +23,7 @@ const FILES = [
 
 function build() {
   const parts = [];
-  parts.push('/* 自动生成，请勿手改；构建：node web-preview/build.js */');
+  parts.push('/* 自动生成，请勿手改；构建：node web-preview/build.cjs */');
   parts.push('(function(){');
   parts.push('var defs={},cache={};');
   parts.push('function register(id,fn){defs[id]=fn;}');

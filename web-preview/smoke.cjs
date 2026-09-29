@@ -1,7 +1,7 @@
 /**
  * 无头集成冒烟测试：在 Node 中用 tt 模拟环境 + Canvas 2D Proxy mock 运行 Main，
  * 覆盖全部场景切换、按钮/手势输入、一整局到 gameover，并验证 openDataContext 模块。
- * 运行：node web-preview/smoke.js
+ * 运行：node web-preview/smoke.cjs
  */
 'use strict';
 const assert = require('assert');

@@ -35,7 +35,7 @@ game/
 ├── openDataContext/
 │   └── index.js            # 开放数据域：好友排行榜渲染（独立上下文）
 └── test/
-    └── core.test.js        # 核心逻辑单元测试（21 个用例）
+    └── core.test.cjs       # 核心逻辑单元测试（21 个用例）
 ```
 
 纯逻辑层（config / tetromino / board / gamecore）不依赖任何抖音 API，可直接在 Node 中测试。
@@ -45,7 +45,7 @@ game/
 需要 Node.js ≥ 18：
 
 ```bash
-node --test test/core.test.js
+node --test test/core.test.cjs
 ```
 
 覆盖：旋转与踢墙、行列消除、7-bag 随机、四向重力锁定、计分、关卡速度、游戏结束判定等 21 个用例。
@@ -53,13 +53,13 @@ node --test test/core.test.js
 集成冒烟测试（在 Node 中以模拟 tt 环境 + Canvas 打桩运行整个游戏：场景切换、按钮/手势输入、完整一局打到游戏结束、分享、开放数据域渲染）：
 
 ```bash
-node web-preview/smoke.js
+node web-preview/smoke.cjs
 ```
 
 ## 浏览器预览（无需安装抖音开发者工具）
 
 ```bash
-node web-preview/serve.js
+node web-preview/serve.cjs
 ```
 
 打开终端显示的地址（默认 <http://127.0.0.1:8737>，端口被占用时自动 +1）：
@@ -67,14 +67,14 @@ node web-preview/serve.js
 - `web-preview/tt-shim.js` 把 `tt.*` API 补齐为浏览器等价物：画布 → `<canvas>`、触摸 → 鼠标/触屏事件、存储 → localStorage
 - 桌面鼠标操作：单击 = 点按（旋转 / 按按钮），按住拖动 = 滑动（沿重力方向拖 = 快速落下，垂直方向拖 = 横向移动）
 - 好友排行榜依赖开放数据域，浏览器中不可用，自动降级为本机排行；其余玩法与真机一致
-- `serve.js` 启动时自动执行 `build.js`，将 CommonJS 模块打包为 `web-preview/bundle.js`（构建产物，已在 .gitignore 中忽略）
+- `serve.cjs` 启动时自动执行 `build.cjs`，将 CommonJS 模块打包为 `web-preview/bundle.js`（构建产物，已在 .gitignore 中忽略）
 
 ## 自动化演示（脚本对局 + 场景截图）
 
 `web-preview/demo.html`（内联脚本 + `demo.js`）在浏览器中自动播放一局**脚本化确定性对局**：种子随机流（mulberry32(42)）+ 固定虚拟时间线 —— 开局 → 下落前提示 → 下落 → 消行 → 升级 → 游戏结束 → 排行榜。配合无头浏览器的 `--virtual-time-budget`（虚拟时钟，确定性回放）即可自动截取各关键场景：
 
 ```powershell
-node web-preview/serve.js   # 先保持服务运行
+node web-preview/serve.cjs   # 先保持服务运行
 # 各帧截图预算(ms)：1-menu=250  2-hint=950  3-fall=4200  4-clear=5150
 #                5-levelup=5750  6-gameover=6500  7-rank=7100
 & "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --headless=new --disable-gpu `
