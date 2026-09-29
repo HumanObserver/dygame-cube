@@ -59,4 +59,5 @@ module.exports = {
   ACCENT: '#ff4d6d',
   BG_TOP: '#0f1220',
   BG_BOTTOM: '#1c2140',
+  BOARD_SCALE: 0.85,         // 棋盘整体缩放（方块大小）：1=铺满可用宽度，调小则方块更小、四周留白更多
 };

@@ -3,7 +3,7 @@
  * 场景：menu / playing / paused / gameover / rank / help
  */
 const {
-  COLS, ROWS, DIRS, PERP, COLORS, ACCENT, BG_TOP, BG_BOTTOM,
+  COLS, ROWS, DIRS, PERP, COLORS, ACCENT, BG_TOP, BG_BOTTOM, BOARD_SCALE,
 } = require('./config.js');
 const { SHAPES, cellsOf } = require('./tetromino.js');
 
@@ -21,6 +21,7 @@ function buildLayout(w, h) {
   const reserved = 322 * s; // HUD + 提示行 + 控制区
   let bs = Math.min(w - 24 * s, h - reserved, h * 0.56);
   bs = Math.max(bs, Math.min(180, w - 24 * s));
+  bs *= BOARD_SCALE; // 整体缩放棋盘：方块更小，四周留白更多
   let by = 142 * s;
   const slack = h - 96 * s - bs - by;
   if (slack > 0) by += slack * 0.3;
