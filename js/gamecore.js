@@ -1,8 +1,9 @@
 /**
  * 游戏核心逻辑（纯 JS，无平台依赖，可在 Node 中单元测试）
  *
- * 相位机：idle → hint(下落前提示) → fall(下落中) → 锁定/消行 → 生成下一个
+ * 相位机：idle → hint(下落前提示) → fall(下落中) → 锁定/消行+沉降 → 生成下一个
  * 方块从棋盘中心生成，重力方向随机（下/左/上/右），填满整行或整列即消除。
+ * 消除后场上剩余方块整体下沉落底（每列向下压实），下沉凑齐的新行列连锁消除。
  */
 const {
   COLS, ROWS, DIRS, PERP, TYPES,
@@ -227,11 +228,25 @@ class GameCore {
 
     const cleared = this.board.clearLines();
     if (cleared.count > 0) {
-      let base = SCORE_TABLE[Math.min(cleared.count, 4)];
-      if (cleared.count > 4) base += (cleared.count - 4) * SCORE_EXTRA;
+      // 消除 → 沉降 循环：消除后剩余方块整体下沉（每列向下压实，不再悬空）；
+      // 下沉可能凑齐新的整行/整列 → 继续消除并沉降，直到稳定（连锁消除合并计数）
+      let count = cleared.count;
+      const allCells = cleared.cells.slice();
+      let settledMoved = 0;
+      for (;;) {
+        const settled = this.board.settle();
+        settledMoved += settled.moved;
+        const next = this.board.clearLines();
+        if (next.count === 0) break;
+        count += next.count;
+        for (let i = 0; i < next.cells.length; i++) allCells.push(next.cells[i]);
+      }
+
+      let base = SCORE_TABLE[Math.min(count, 4)];
+      if (count > 4) base += (count - 4) * SCORE_EXTRA;
       this.score += base * this.level;
-      this.lines += cleared.count;
-      this.events.push({ type: 'clear', cells: cleared.cells, count: cleared.count });
+      this.lines += count;
+      this.events.push({ type: 'clear', cells: allCells, count, settled: settledMoved });
 
       const newLevel = Math.floor(this.lines / LINES_PER_LEVEL) + 1;
       if (newLevel > this.level) {

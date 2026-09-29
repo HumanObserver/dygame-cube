@@ -8,6 +8,7 @@
 - **随机重力**：每个方块的下落方向随机（下 / 左 / 上 / 右），重力侧的棋盘边缘会高亮显示
 - **下落前提示**：方块正式下落前会停留片刻并闪烁，同时用大号箭头预告「方块类型 + 下落方向」；HUD 中还有「下一个」面板提前展示下一块的类型与方向
 - **双向消行**：填满任意整行 **或** 整列即可消除（适配四向重力）
+- **消除后沉降**：消除后场上剩余方块整体下沉落底（每列向下压实，不再悬空、堆叠不会从中间裂开）；下沉若凑齐新的整行/整列将连锁消除，一并计数计分
 - **关卡系统**：每消除 8 行升 1 关，下落速度逐关加快（500ms/格 → 最快 80ms/格），下落前提示时间也随关卡缩短
 - **玩家排行**：
   - 本机 TOP10（始终可用，本地持久化）
@@ -35,7 +36,7 @@ game/
 ├── openDataContext/
 │   └── index.js            # 开放数据域：好友排行榜渲染（独立上下文）
 └── test/
-    └── core.test.cjs       # 核心逻辑单元测试（21 个用例）
+    └── core.test.cjs       # 核心逻辑单元测试（26 个用例）
 ```
 
 纯逻辑层（config / tetromino / board / gamecore）不依赖任何抖音 API，可直接在 Node 中测试。
@@ -48,7 +49,7 @@ game/
 node --test test/core.test.cjs
 ```
 
-覆盖：旋转与踢墙、行列消除、7-bag 随机、四向重力锁定、计分、关卡速度、游戏结束判定等 21 个用例。
+覆盖：旋转与踢墙、行列消除、消除后整体下沉（沉降/连锁消除）、7-bag 随机、四向重力锁定、计分、关卡速度、游戏结束判定等 26 个用例。
 
 集成冒烟测试（在 Node 中以模拟 tt 环境 + Canvas 打桩运行整个游戏：场景切换、按钮/手势输入、完整一局打到游戏结束、分享、开放数据域渲染）：
 
@@ -97,7 +98,7 @@ node web-preview/serve.cjs   # 先保持服务运行
 
 1. 下载安装 [抖音开发者工具](https://developer.open-douyin.com/docs/resource/zh-CN/mini-game/develop/developer-instrument/developer-instrument-update-and-download)
 2. 打开工具 → 导入项目 → 选择本仓库目录
-3. AppID：填入你在[抖音开放平台](https://developer.open-douyin.com/)创建小游戏后获得的 AppID（形如 `tt` 开头），并同步写入 `project.config.json` 的 `appid` 字段；没有 AppID 时可选择工具提供的测试号/无 AppID 模式先行预览
+3. AppID：本项目已填入 AppID `ttb7bec10329c6ac6c02`（`project.config.json` 的 `appid` 字段），导入后工具会自动识别；如需更换，请在[抖音开放平台](https://developer.open-douyin.com/)获取新 AppID（形如 `tt` 开头）并替换该字段
 4. 编译后即可在模拟器中游玩；真机预览用工具右上角「预览」扫码
 
 > 注意：好友排行榜依赖开放数据域与云端托管数据，模拟器中可能不完整，请以真机为准。所有 `tt.*` 调用均有守卫，API 缺失时自动降级为本机排行，不会报错崩溃。

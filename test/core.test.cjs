@@ -101,6 +101,24 @@ test('board：行列十字同时消除，交叉格去重', () => {
   assert.strictEqual(b.grid[5][5], null); // 未波及的格子保留
 });
 
+test('board：settle 每列向下压实，悬空格子落底且保持相对顺序', () => {
+  const b = new Board(10, 10);
+  b.lock([{ x: 2, y: 0 }], 'I'); // 悬空格子（上）
+  b.lock([{ x: 2, y: 3 }], 'J'); // 悬空格子（下）
+  b.lock([{ x: 5, y: 9 }], 'T'); // 已落底，不应移动
+  const r = b.settle();
+  assert.strictEqual(r.moved, 2);
+  assert.strictEqual(b.grid[9][2], 'J'); // 原本靠下的仍靠下
+  assert.strictEqual(b.grid[8][2], 'I');
+  assert.strictEqual(b.grid[0][2], null);
+  assert.strictEqual(b.grid[3][2], null);
+  assert.strictEqual(b.grid[9][5], 'T');
+  // 幂等：已压实的棋盘再次 settle 无移动
+  const again = b.settle();
+  assert.strictEqual(again.moved, 0);
+  assert.strictEqual(again.moves.length, 0);
+});
+
 /* ================= gamecore ================= */
 
 test('core：7-bag 每 7 个方块不重复', () => {
@@ -206,6 +224,92 @@ test('core：消行得分（同时消 2 行 = 250×关卡 + 落距×2）', () =>
     assert.strictEqual(core.board.grid[ROWS - 2][c], null);
     assert.strictEqual(core.board.grid[ROWS - 1][c], null);
   }
+});
+
+test('core：消行后剩余方块整体下沉，列内无悬空', () => {
+  const core = new GameCore({ rng: constRng(0.1) }); // 重力向下
+  core.phase = 'fall';
+  const R = ROWS, C = COLS;
+  // 第 0 列两个悬空格子 + 底行仅缺最后两列
+  core.board.lock([{ x: 0, y: 3 }], 'Z');
+  core.board.lock([{ x: 0, y: 12 }], 'S');
+  const cells = [];
+  for (let c = 0; c < C - 2; c++) cells.push({ x: c, y: R - 1 });
+  core.board.lock(cells, 'J');
+  core.score = 0;
+  core.current = { type: 'O', matrix: SHAPES.O, dir: 0, x: C - 2, y: R - 3 };
+  core.hardDrop(); // 补满底行 → 消除 → 沉降
+  assert.strictEqual(core.lines, 1);
+  // 原悬空的两格已沉到第 0 列底部，且保持上下相对顺序
+  assert.strictEqual(core.board.grid[R - 1][0], 'S');
+  assert.strictEqual(core.board.grid[R - 2][0], 'Z');
+  assert.strictEqual(core.board.grid[3][0], null);
+  assert.strictEqual(core.board.grid[12][0], null);
+  // 全棋盘不变量：任何列内不允许「下方有空洞的悬空格子」
+  for (let c = 0; c < C; c++) {
+    let sawHole = false;
+    for (let r = R - 1; r >= 0; r--) {
+      if (!core.board.grid[r][c]) sawHole = true;
+      else assert.ok(!sawHole, '列 ' + c + ' 行 ' + r + ' 悬空（下方有空洞）');
+    }
+  }
+});
+
+test('core：消列后悬空方块同样下沉落底', () => {
+  const core = new GameCore({ rng: constRng(0.1) });
+  core.phase = 'fall';
+  const R = ROWS, C = COLS;
+  const col = [];
+  for (let r = 0; r < R - 4; r++) col.push({ x: C - 1, y: r }); // 第 C-1 列已填 0..R-5 行
+  core.board.lock(col, 'I');
+  core.board.lock([{ x: 5, y: 7 }], 'Z'); // 悬空块
+  // 竖直 I（占 1 列 4 行）从 x=C-3 落底 → 补齐第 C-1 列最后 4 格
+  core.current = { type: 'I', matrix: rotateCW(SHAPES.I), dir: 0, x: C - 3, y: R - 4 };
+  core.hardDrop();
+  assert.strictEqual(core.lines, 1); // 整列消除
+  for (let r = 0; r < R; r++) assert.strictEqual(core.board.grid[r][C - 1], null);
+  assert.strictEqual(core.board.grid[R - 1][5], 'Z'); // 悬空块已落底
+  assert.strictEqual(core.board.grid[7][5], null);
+});
+
+test('core：沉降凑齐新整行 → 连锁消除合并计数', () => {
+  const core = new GameCore({ rng: constRng(0.1) }); // 重力向下
+  core.phase = 'fall';
+  const R = ROWS, C = COLS;
+  // 第 10 行整行填满（首消目标）；底行缺第 9 列；第 9 列上方有一悬空格子
+  const row = [];
+  for (let c = 0; c < C; c++) row.push({ x: c, y: 10 });
+  core.board.lock(row, 'T');
+  const bottom = [];
+  for (let c = 0; c < C; c++) if (c !== 9) bottom.push({ x: c, y: R - 1 });
+  core.board.lock(bottom, 'J');
+  core.board.lock([{ x: 9, y: 4 }], 'Z');
+  core.score = 0;
+  // O 下落被悬空 Z 挡住，锁定在第 2/3 行（不直接参与消除），锁定后触发首消
+  core.current = { type: 'O', matrix: SHAPES.O, dir: 0, x: 8, y: 0 };
+  core.hardDrop();
+  // 首消第 10 行 → 沉降：O 块与悬空 Z 下落，Z 落到底行第 9 列 → 底行凑齐
+  // → 连锁消除底行 → 再沉降：O 块落底
+  assert.strictEqual(core.lines, 2);
+  assert.strictEqual(core.score, 250 + 2 * 2); // 合计 2 行 = SCORE_TABLE[2] + 硬降落距 2 格 ×2
+  // O 块最终沉底（底行消除后再沉降到 18/19 行的 8、9 列）
+  assert.strictEqual(core.board.grid[R - 1][8], 'O');
+  assert.strictEqual(core.board.grid[R - 1][9], 'O');
+  assert.strictEqual(core.board.grid[R - 2][8], 'O');
+  assert.strictEqual(core.board.grid[R - 2][9], 'O');
+  assert.strictEqual(core.board.grid[10][0], null); // 首消行已清空
+  assert.strictEqual(core.board.grid[4][9], null);  // 悬空 Z 已参与连锁消除
+  assert.strictEqual(core.board.grid[R - 1][0], null); // 连锁消除的底行不再回填
+});
+
+test('core：未发生消除时不触发下沉（保留四向重力锁定的悬空位置）', () => {
+  const core = new GameCore({ rng: constRng(0.1) }); // 重力向下
+  core.phase = 'fall';
+  core.board.lock([{ x: 3, y: 2 }], 'T'); // 悬空块（如上向重力锁定的残留）
+  core.current = { type: 'O', matrix: SHAPES.O, dir: 0, x: 10, y: 0 };
+  core.hardDrop(); // 落底锁定，但未消除任何行列
+  assert.strictEqual(core.lines, 0);
+  assert.strictEqual(core.board.grid[2][3], 'T'); // 悬空块保持原位，不沉降
 });
 
 test('core：每 8 行升 1 关，下落间隔缩短', () => {

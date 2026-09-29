@@ -89,6 +89,32 @@ class Board {
 
     return { rowCount: rows.length, colCount: cols.length, count: rows.length + cols.length, cells };
   }
+
+  /**
+   * 重力沉降：每列的已固定格子整体向下落底，填满列内空洞（保持上下相对顺序）。
+   * 用于消除后让剩余方块下沉，保证列内不再悬空、堆叠不会从中间裂开。
+   * 返回 { moved, moves }：moved 为发生移动的格子数，
+   * moves 为 [{x, fromY, toY, type}]（仅含实际移动的格子）。
+   */
+  settle() {
+    let moved = 0;
+    const moves = [];
+    for (let c = 0; c < this.cols; c++) {
+      let write = this.rows - 1; // 下一个实体格应落的行（自底向上）
+      for (let r = this.rows - 1; r >= 0; r--) {
+        const v = this.grid[r][c];
+        if (!v) continue;
+        if (write !== r) {
+          this.grid[write][c] = v;
+          this.grid[r][c] = null;
+          moved++;
+          moves.push({ x: c, fromY: r, toY: write, type: v });
+        }
+        write--;
+      }
+    }
+    return { moved, moves };
+  }
 }
 
 module.exports = Board;
