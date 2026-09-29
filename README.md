@@ -50,6 +50,25 @@ node --test test/core.test.js
 
 覆盖：旋转与踢墙、行列消除、7-bag 随机、四向重力锁定、计分、关卡速度、游戏结束判定等 21 个用例。
 
+集成冒烟测试（在 Node 中以模拟 tt 环境 + Canvas 打桩运行整个游戏：场景切换、按钮/手势输入、完整一局打到游戏结束、分享、开放数据域渲染）：
+
+```bash
+node web-preview/smoke.js
+```
+
+## 浏览器预览（无需安装抖音开发者工具）
+
+```bash
+node web-preview/serve.js
+```
+
+打开终端显示的地址（默认 <http://127.0.0.1:8737>，端口被占用时自动 +1）：
+
+- `web-preview/tt-shim.js` 把 `tt.*` API 补齐为浏览器等价物：画布 → `<canvas>`、触摸 → 鼠标/触屏事件、存储 → localStorage
+- 桌面鼠标操作：单击 = 点按（旋转 / 按按钮），按住拖动 = 滑动（沿重力方向拖 = 快速落下，垂直方向拖 = 横向移动）
+- 好友排行榜依赖开放数据域，浏览器中不可用，自动降级为本机排行；其余玩法与真机一致
+- `serve.js` 启动时自动执行 `build.js`，将 CommonJS 模块打包为 `web-preview/bundle.js`（构建产物，已在 .gitignore 中忽略）
+
 ## 在抖音开发者工具中运行
 
 1. 下载安装 [抖音开发者工具](https://developer.open-douyin.com/docs/resource/zh-CN/mini-game/develop/developer-instrument/developer-instrument-update-and-download)

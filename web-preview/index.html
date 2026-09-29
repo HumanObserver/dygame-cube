@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>引力方块 · 浏览器预览</title>
+<style>
+  html, body { margin:0; padding:0; background:#0b0e1a; height:100%; overflow:hidden; }
+  body { display:flex; align-items:center; justify-content:center; }
+  #game-canvas { display:block; box-shadow:0 0 40px rgba(0,229,255,.08); }
+  #tt-toast {
+    position:fixed; left:50%; top:12%; transform:translateX(-50%);
+    background:rgba(20,24,44,.95); color:#ffd500; border:1px solid #ff4d6d;
+    padding:10px 16px; border-radius:10px; font:14px/1.5 sans-serif;
+    max-width:80%; opacity:0; transition:opacity .3s; pointer-events:none; z-index:99;
+  }
+</style>
+</head>
+<body>
+<div id="tt-toast"></div>
+<script src="tt-shim.js"></script>
+<script src="bundle.js"></script>
+</body>
+</html>
