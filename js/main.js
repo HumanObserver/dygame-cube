@@ -120,7 +120,8 @@ class Main {
     if (Math.abs(dotG) >= Math.abs(dotP)) {
       if (dotG > 30) { this.core.hardDrop(); this.vibrate(15); }
     } else {
-      const steps = Math.min(4, Math.max(1, Math.round(Math.abs(dotP) / 28)));
+      // 按格子实际尺寸换算：拖动约一个格宽 = 移动一格（适配任意棋盘尺寸）
+      const steps = Math.min(8, Math.max(1, Math.round(Math.abs(dotP) / B.cell)));
       const sign = dotP > 0 ? 1 : -1;
       let moved = false;
       for (let i = 0; i < steps; i++) { if (this.core.movePerp(sign)) moved = true; else break; }

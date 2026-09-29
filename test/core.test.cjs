@@ -8,7 +8,7 @@ const assert = require('node:assert');
 const GameCore = require('../js/gamecore.js');
 const Board = require('../js/board.js');
 const { SHAPES, rotateCW, cellsOf } = require('../js/tetromino.js');
-const { COLS, ROWS, DIRS, PERP } = require('../js/config.js');
+const { COLS, ROWS, DIRS, PERP, FALL_BASE, FALL_STEP, FALL_MIN, HINT_BASE, HINT_STEP, HINT_MIN } = require('../js/config.js');
 
 /** 可复现的伪随机源 */
 function constRng(v) {
@@ -124,7 +124,7 @@ test('core：重力方向由 rng 决定（0.3→左，0.9→右）', () => {
 test('core：方块从中心生成，hint 相位结束后进入 fall', () => {
   const core = new GameCore({ rng: constRng(0.3) });
   assert.strictEqual(core.phase, 'hint');
-  // 10x10 棋盘，出生点应靠近中心
+  // 出生点应靠近棋盘中心（对任意 COLS 尺寸成立）
   assert.ok(Math.abs(core.current.x + core.current.matrix.length / 2 - COLS / 2) <= 1);
   core.update(core.hintTime() + 1);
   assert.strictEqual(core.phase, 'fall');
@@ -138,13 +138,14 @@ test('core：重力向下自然落底锁定并重新出块', () => {
   core.current = { type: 'O', matrix: SHAPES.O, dir: 0, x: 4, y: 0 };
   core.score = 0;
   const iv = core.fallInterval();
-  for (let i = 0; i < 9; i++) core.update(iv); // 8 格下落 + 第 9 拍锁定
+  const dist = ROWS - 2; // O 占 2 行：从 y=0 落到 y=ROWS-2 共 dist 格
+  for (let i = 0; i < dist + 1; i++) core.update(iv); // dist 格下落 + 最后一拍锁定
   assert.strictEqual(core.phase, 'hint');       // 已锁定并生成下一块
   let locked = 0;
   for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) if (core.board.grid[r][c]) locked++;
   assert.strictEqual(locked, 4);                // O 方块 4 格落底
-  assert.strictEqual(core.board.grid[9][4], 'O');
-  assert.strictEqual(core.score, 8);            // 自然下落 8 格 × 1 分
+  assert.strictEqual(core.board.grid[ROWS - 1][4], 'O');
+  assert.strictEqual(core.score, dist);         // 自然下落 dist 格 × 1 分
 });
 
 test('core：重力向左时落向左侧墙', () => {
@@ -191,50 +192,51 @@ test('core：ghostCells 给出重力方向落点', () => {
 test('core：消行得分（同时消 2 行 = 250×关卡 + 落距×2）', () => {
   const core = new GameCore({ rng: constRng(0.1) });
   core.phase = 'fall';
-  // 预填第 8、9 行，仅留第 8、9 列空
+  // 预填底部两行，仅留最后两列空
   const cells = [];
-  for (let c = 0; c < COLS - 2; c++) { cells.push({ x: c, y: 8 }); cells.push({ x: c, y: 9 }); }
+  for (let c = 0; c < COLS - 2; c++) { cells.push({ x: c, y: ROWS - 2 }); cells.push({ x: c, y: ROWS - 1 }); }
   core.board.lock(cells, 'J');
   core.score = 0;
-  core.current = { type: 'O', matrix: SHAPES.O, dir: 0, x: 8, y: 7 };
+  core.current = { type: 'O', matrix: SHAPES.O, dir: 0, x: COLS - 2, y: ROWS - 3 };
   core.hardDrop(); // 下落 1 格锁定，补满两行
   assert.strictEqual(core.lines, 2);
   assert.strictEqual(core.score, 250 * 1 + 1 * 2);
   // 两行被清空
   for (let c = 0; c < COLS; c++) {
-    assert.strictEqual(core.board.grid[8][c], null);
-    assert.strictEqual(core.board.grid[9][c], null);
+    assert.strictEqual(core.board.grid[ROWS - 2][c], null);
+    assert.strictEqual(core.board.grid[ROWS - 1][c], null);
   }
 });
 
 test('core：每 8 行升 1 关，下落间隔缩短', () => {
   const core = new GameCore({ rng: constRng(0.1) });
   const iv1 = core.fallInterval();
-  assert.strictEqual(iv1, 1000);
+  assert.strictEqual(iv1, FALL_BASE);
   core.lines = 7;
   core.phase = 'fall';
   const cells = [];
-  for (let c = 0; c < COLS - 2; c++) cells.push({ x: c, y: 9 });
+  for (let c = 0; c < COLS - 2; c++) cells.push({ x: c, y: ROWS - 1 });
   core.board.lock(cells, 'J');
-  core.current = { type: 'O', matrix: SHAPES.O, dir: 0, x: 8, y: 8 };
-  core.hardDrop(); // 补满第 9 行缺口 → 消 1 行 → lines=8 → 升级
+  core.current = { type: 'O', matrix: SHAPES.O, dir: 0, x: COLS - 2, y: ROWS - 2 };
+  core.hardDrop(); // 补满底行缺口 → 消 1 行 → lines=8 → 升级
   assert.strictEqual(core.lines, 8);
   assert.strictEqual(core.level, 2);
-  assert.strictEqual(core.fallInterval(), 920);
-  assert.strictEqual(core.hintTime(), 950);
+  assert.strictEqual(core.fallInterval(), FALL_BASE - FALL_STEP);
+  assert.strictEqual(core.hintTime(), HINT_BASE - HINT_STEP);
 });
 
 test('core：速度有下限', () => {
   const core = new GameCore({ rng: constRng(0.1) });
   core.level = 99;
-  assert.strictEqual(core.fallInterval(), 120);
-  assert.strictEqual(core.hintTime(), 500);
+  assert.strictEqual(core.fallInterval(), FALL_MIN);
+  assert.strictEqual(core.hintTime(), HINT_MIN);
 });
 
 test('core：中心出生点被堵 → 游戏结束', () => {
   const core = new GameCore({ rng: constRng(0.1) });
   const cells = [];
-  for (let r = 3; r <= 6; r++) for (let c = 3; c <= 6; c++) cells.push({ x: c, y: r });
+  const c0 = Math.floor(ROWS / 2) - 2; // 中心 4×4 区域（覆盖所有方块的出生位置）
+  for (let r = c0; r < c0 + 4; r++) for (let c = c0; c < c0 + 4; c++) cells.push({ x: c, y: r });
   core.board.lock(cells, 'Z');
   core.spawn();
   assert.strictEqual(core.gameOver, true);
@@ -248,6 +250,6 @@ test('core：hardDrop 计分（每格 +2）', () => {
   core.phase = 'fall';
   core.current = { type: 'O', matrix: SHAPES.O, dir: 0, x: 4, y: 0 };
   core.score = 0;
-  core.hardDrop(); // 从 y=0 落到 y=8，共 8 格
-  assert.strictEqual(core.score, 16);
+  core.hardDrop(); // 从 y=0 落到 y=ROWS-2，共 ROWS-2 格
+  assert.strictEqual(core.score, (ROWS - 2) * 2);
 });
