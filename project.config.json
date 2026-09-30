@@ -1,1 +1,28 @@
-{"appid":"ttb7bec10329c6ac6c02","projectname":"dygame-cube","description":"引力方块 - 抖音小游戏（四向重力俄罗斯方块变体）","compileType":"game","setting":{"es6":true,"minified":false,"urlCheck":false},"packOptions":{"ignore":[{"type":"folder","value":"web-preview"},{"type":"folder","value":"test"},{"type":"file","value":"README.md"},{"type":"file","value":"agent.md"},{"type":"file","value":"上线指南.md"},{"type":"file","value":".gitignore"}],"include":[]}}
+{
+  "appid": "ttb7bec10329c6ac6c02",
+  "projectname": "dygame-cube",
+  "description": "引力方块 - 抖音小游戏（四向重力俄罗斯方块变体）",
+  "compileType": "game",
+  "setting": {
+    "es6": true,
+    "minified": false,
+    "urlCheck": false
+  },
+  "packOptions": {
+    "ignore": [
+      { "type": "folder", "value": "web-preview" },
+      { "type": "folder", "value": "test" },
+      { "type": "folder", "value": "log" },
+      { "type": "folder", "value": "「必接」侧边栏复访能力技术指南_小游戏_抖音开放平台_files" },
+      { "type": "folder", "value": "「必接」侧边栏复访能力_小游戏_抖音开放平台_files" },
+      { "type": "file", "value": "「必接」侧边栏复访能力技术指南_小游戏_抖音开放平台.html" },
+      { "type": "file", "value": "「必接」侧边栏复访能力_小游戏_抖音开放平台.html" },
+      { "type": "file", "value": "README.md" },
+      { "type": "file", "value": "agent.md" },
+      { "type": "file", "value": "上线指南.md" },
+      { "type": "file", "value": ".gitignore" },
+      { "type": "file", "value": "127.0.0.1-1790696274023.log" }
+    ],
+    "include": []
+  }
+}

@@ -55,6 +55,27 @@ canvasMock.getContext = () => ctxMock;
 const storage = new Map();
 const touchCbs = {};
 let shareCount = 0;
+const showCbs = [];            // tt.onShow 回调（侧边栏复访）
+const mock = {                 // 平台能力调用计数
+  navigateToScene: 0, addToDesktop: 0, subscribe: 0, interstitial: 0, iap: 0,
+};
+function fireShow(opts) { for (const cb of showCbs) cb(opts); }
+/** 同步回调的激励视频/插屏 mock（冒烟测试为假时钟，必须同步触发 onClose） */
+function mockAd(kind, onShowCb) {
+  const closeCbs = [];
+  return {
+    load: () => Promise.resolve(),
+    show: () => {
+      if (onShowCb) onShowCb();
+      for (const cb of closeCbs) cb({ isEnded: true });
+      return Promise.resolve();
+    },
+    onClose: (cb) => closeCbs.push(cb),
+    onError: () => {},
+    onLoad: () => {},
+    destroy: () => {},
+  };
+}
 global.tt = {
   createCanvas: () => canvasMock,
   getSystemInfoSync: () => ({ windowWidth: 390, windowHeight: 844, pixelRatio: 2, platform: 'smoke' }),
@@ -70,6 +91,34 @@ global.tt = {
   shareAppMessage() { shareCount++; },
   setUserCloudStorage(o) { if (o && o.success) o.success(); },
   getOpenDataContext: () => null,
+
+  /* ---- 生命周期 / 侧边栏复访 ---- */
+  onShow: (cb) => { showCbs.push(cb); },
+  getLaunchOptionsSync: () => ({ scene: '010115', query: {} }),
+  checkScene: (o) => { if (o && o.success) o.success({ isExist: true }); },
+  navigateToScene: (o) => {
+    mock.navigateToScene++;
+    assert.strictEqual(o && o.scene, 'sidebar', 'navigateToScene 必须传 scene=sidebar');
+    if (o && o.success) o.success({});
+  },
+
+  /* ---- 添加到桌面 / 订阅消息 ---- */
+  addToDesktop: (o) => { mock.addToDesktop++; if (o && o.success) o.success({}); },
+  requestSubscribeMessage: (o) => {
+    mock.subscribe++;
+    assert.ok(Array.isArray(o && o.tmplIds) && o.tmplIds.length > 0, '订阅消息需传 tmplIds');
+    if (o && o.success) o.success({});
+  },
+
+  /* ---- 广告 ---- */
+  createRewardedVideoAd: () => mockAd('rewarded'),
+  createInterstitialAd: () => mockAd('interstitial', () => { mock.interstitial++; }),
+
+  /* ---- 内购 ---- */
+  requestMidasPaymentGameItem: (o) => { mock.iap++; if (o && o.success) o.success({}); },
+
+  /* ---- 弹窗（同步确认） ---- */
+  showModal: (o) => { if (o && o.success) o.success({ confirm: true, cancel: false }); },
 };
 
 /* ---------- rAF 捕获 ---------- */
@@ -116,7 +165,8 @@ assert.strictEqual(main.state, 'menu', '初始场景应为 menu');
 frames(5);
 
 function btnCenter(id) {
-  const b = Render.sceneButtons(main.state, main.L).filter((x) => x.id === id)[0];
+  const opts = main.sceneOpts ? main.sceneOpts() : {};
+  const b = Render.sceneButtons(main.state, main.L, opts).filter((x) => x.id === id)[0];
   assert.ok(b, '按钮不存在: ' + id + ' @ ' + main.state);
   return { x: b.x + b.w / 2, y: b.y + b.h / 2 };
 }
@@ -207,6 +257,88 @@ console.log('控制按钮 OK');
 /* 分享 */
 rankMod.share(main.core.score);
 assert.strictEqual(shareCount, 1, 'shareAppMessage 应被调用');
+
+/* ---------- 平台能力冒烟：侧边栏复访 / 桌面 / 订阅 / 广告金币 / 复活 / 插屏 ---------- */
+const platform = require('../js/platform.js');
+const { ROWS: RWS, PLATFORM: PCFG } = require('../js/config.js');
+
+platform.init(); // 注册 onShow/checkScene + 新手赠币（一次性）
+assert.strictEqual(platform.api.sidebar, true, '应检测到 navigateToScene');
+assert.ok(platform.getCoins() >= PCFG.WELCOME_COINS, '新手赠币应到账');
+
+// 普通启动（非侧边栏）→ 不可领奖
+let st = platform.getSidebarState();
+assert.strictEqual(st.supported, true, 'checkScene isExist=true → supported');
+assert.strictEqual(st.claimable, false, '非侧边栏启动不可领奖');
+
+// 模拟从抖音首页侧边栏复访进入（官方启动参数）
+fireShow({ scene: '021036', query: {}, launch_from: 'homepage', location: 'sidebar_card' });
+st = platform.getSidebarState();
+assert.strictEqual(st.fromSidebar, true, '应判定为侧边栏启动');
+assert.strictEqual(st.claimable, true, '侧边栏启动 + 未领取 → 可领奖');
+
+// menu → 侧边栏奖励面板 → 领取奖励
+main.setState('menu'); frames(2);
+tapBtn('sidebarGift');
+assert.strictEqual(main.state, 'sidebar', '侧边栏任务面板');
+const coinsBefore = platform.getCoins();
+tapBtn('sidebarAction');
+assert.strictEqual(platform.getCoins(), coinsBefore + PCFG.SIDEBAR_REWARD_COINS, '领奖后金币增加');
+assert.strictEqual(platform.getSidebarState().claimedToday, true, '今日已领取');
+tapBtn('sidebarAction'); // 已领取后再点 → 仍可跳侧边栏（培养复访），但不重复发奖
+assert.strictEqual(platform.getCoins(), coinsBefore + PCFG.SIDEBAR_REWARD_COINS, '重复点击不重复发奖');
+assert.strictEqual(mock.navigateToScene, 1, 'navigateToScene(scene=sidebar) 应被调用');
+tapBtn('sidebarClose');
+assert.strictEqual(main.state, 'menu', '关闭面板回菜单');
+
+// 小按钮：添加到桌面 / 订阅提醒 / 免费金币（激励视频同步 mock → +金币）
+const c1 = platform.getCoins();
+tapBtn('desktop');
+assert.strictEqual(mock.addToDesktop, 1, 'addToDesktop 应被调用');
+tapBtn('subscribe');
+assert.strictEqual(mock.subscribe, 1, 'requestSubscribeMessage 应被调用');
+tapBtn('freeCoins');
+assert.strictEqual(platform.getCoins(), c1 + PCFG.AD_REWARD_COINS, '看广告应得金币');
+
+// 非侧边栏启动时点「去首页侧边栏」→ navigateToScene(scene='sidebar')
+fireShow({ scene: '010115', query: {} }); // 切回普通启动信息
+tapBtn('sidebarGift');
+tapBtn('sidebarAction');
+assert.strictEqual(mock.navigateToScene, 2, 'navigateToScene 应再次被调用');
+tapBtn('sidebarClose');
+
+// 构造游戏结束 → 复活按钮出现 → 点复活（激励视频路径，同步 onClose isEnded）
+main.onButton('start');
+assert.strictEqual(main.state, 'playing');
+{
+  const core = main.core;
+  core.reset();
+  const cc = [];
+  const c0 = Math.floor(RWS / 2) - 2;
+  for (let r = c0; r < c0 + 4; r++) for (let c = c0; c < c0 + 4; c++) cc.push({ x: c, y: r });
+  core.board.lock(cc, 'Z');
+  core.current = null;
+  core.spawn(); // 中心被堵 → gameover 事件
+  frames(2, 50); // 主循环处理事件 → 切结算面板
+}
+assert.strictEqual(main.state, 'gameover', '应进入结算');
+assert.ok(mock.interstitial >= 1, 'gameover 应触发插屏广告');
+assert.strictEqual(main.canRevive(), true, '应可复活');
+{
+  const core = main.core;
+  const scoreBefore = core.score;
+  core.score = 500; // 便于断言分数保留
+  tapBtn('revive');
+  assert.strictEqual(main.state, 'playing', '复活后应回到游戏');
+  assert.strictEqual(core.gameOver, false, '复活后非结束态');
+  assert.strictEqual(core.score, 500, '复活保留分数');
+  assert.strictEqual(main.reviveUsed, true, '复活已用');
+  assert.strictEqual(main.canRevive(), false, '每局限一次复活');
+  core.score = scoreBefore;
+}
+main.setState('menu'); frames(2);
+console.log('平台能力 OK — coins=' + platform.getCoins() +
+  ' navigateToScene=' + mock.navigateToScene + ' interstitial=' + mock.interstitial);
 
 /* 重力方向随机性直测：独立 rng（不干扰主流程随机流），空棋盘反复 spawn 200 次 */
 const GameCore = require('../js/gamecore.js');

@@ -5,7 +5,8 @@ const GameCore = require('./gamecore.js');
 const Render = require('./render.js');
 const Input = require('./input.js');
 const rank = require('./rank.js');
-const { DIRS, PERP } = require('./config.js');
+const platform = require('./platform.js');
+const { DIRS, PERP, PLATFORM } = require('./config.js');
 
 const TT = (typeof tt !== 'undefined') ? tt : null;
 
@@ -29,19 +30,25 @@ class Main {
     this.L = Render.buildLayout(this.w, this.h);
     this.core = new GameCore();
 
-    this.state = 'menu'; // menu | playing | paused | gameover | rank | help
+    this.state = 'menu'; // menu | playing | paused | gameover | rank | help | sidebar
     this.best = rank.getBest();
     this.localRank = rank.getLocal();
     this.friendCanvas = null;
     this.newBest = false;
     this.fx = [];      // 消行闪光 [{cells, t, dur}]
     this.toast = null; // 浮字 {text, t, dur}
+    this.ptoast = null; // 全局平台提示 {text, t, dur}（所有场景可见）
     this.last = Date.now();
     this._rankReturn = 'menu';
+    this.coins = platform.getCoins();
+    this.reviveUsed = false; // 本局是否已用过复活（每局限一次）
 
     this.input = new Input(TT);
     this.input.onTap = (x, y) => this.handleTap(x, y);
     this.input.onSwipe = (dx, dy, sx, sy) => this.handleSwipe(dx, dy, sx, sy);
+
+    // 从侧边栏等入口回到前台时刷新金币/状态（侧边栏复访奖励依赖最新 onShow 信息）
+    platform.onShow(() => { this.coins = platform.getCoins(); });
 
     // 切后台自动暂停
     try {
@@ -82,13 +89,143 @@ class Main {
     this.fx = [];
     this.toast = null;
     this.newBest = false;
+    this.reviveUsed = false;
     this.state = 'playing';
+  }
+
+  /* ---------- 平台能力（侧边栏/桌面/订阅/广告/内购，详见 js/platform.js） ---------- */
+
+  /** 供渲染/命中检测使用的场景状态 */
+  sceneOpts() {
+    const st = platform.getSidebarState();
+    return {
+      canRevive: this.canRevive(),
+      sidebarSupported: st.supported,
+      sidebarClaimable: st.claimable,
+      sidebarClaimedToday: st.claimedToday,
+    };
+  }
+
+  /** 本局是否还能复活（每局限一次；有广告/金币/内购任一途径即可） */
+  canRevive() {
+    if (this.state !== 'gameover' || this.reviveUsed) return false;
+    return platform.api.rewardedAd
+      || platform.getCoins() >= PLATFORM.REVIVE_COIN_COST
+      || (PLATFORM.ENABLE_IAP && platform.api.iap);
+  }
+
+  /** 全局浮动提示 */
+  notify(msg) {
+    this.ptoast = { text: msg, t: 0, dur: 2200 };
+  }
+
+  /** 复活入口：优先看激励视频；广告不可用则金币复活；金币不足且已开通内购则引导购买 */
+  tryRevive() {
+    if (this.state !== 'gameover' || this.reviveUsed) return;
+    if (platform.api.rewardedAd) {
+      this.notify('正在加载激励视频…');
+      platform.showRewardedAd((res) => {
+        if (res.ok) { this.doRevive('复活成功，继续加油！'); return; }
+        if (res.reason === 'notEnded') { this.notify('完整观看广告才能复活'); return; }
+        this.reviveByCoins();
+      });
+    } else {
+      this.reviveByCoins();
+    }
+  }
+
+  reviveByCoins() {
+    const cost = PLATFORM.REVIVE_COIN_COST;
+    const coins = platform.getCoins();
+    if (coins >= cost) {
+      platform.confirm('金币复活', '使用 ' + cost + ' 金币复活并继续本局？', (ok) => {
+        if (!ok) return;
+        if (platform.spendCoins(cost)) {
+          this.coins = platform.getCoins();
+          this.doRevive('复活成功，继续加油！');
+        } else {
+          this.notify('金币不足');
+        }
+      });
+      return;
+    }
+    if (PLATFORM.ENABLE_IAP && platform.api.iap) {
+      const p = PLATFORM.IAP;
+      platform.confirm('金币不足',
+        '复活需要 ' + cost + ' 金币（当前 ' + coins + '）。花 ' +
+        (p.priceFen / 100).toFixed(2) + ' 元购买 ' + p.coins + ' 金币？',
+        (ok) => {
+          if (!ok) return;
+          platform.buyCoins((res) => {
+            if (res.ok) {
+              this.coins = platform.addCoins(p.coins);
+              this.notify('购买成功');
+              this.reviveByCoins();
+            } else {
+              this.notify(res.reason === 'unsupported' ? '内购未开通' : '购买未完成');
+            }
+          });
+        });
+      return;
+    }
+    this.notify('复活失败：广告未就绪且金币不足');
+  }
+
+  doRevive(msg) {
+    if (this.reviveUsed) return;
+    if (this.core.revive()) {
+      this.reviveUsed = true;
+      this.newBest = false;
+      this.fx = [];
+      this.state = 'playing';
+      this.notify(msg);
+      this.vibrate(20);
+    } else {
+      this.notify('复活失败');
+    }
+  }
+
+  /** 免费金币：完整观看激励视频得金币 */
+  earnCoinsByAd() {
+    if (!platform.api.rewardedAd) { this.notify('当前环境不支持激励视频'); return; }
+    this.notify('正在加载激励视频…');
+    platform.showRewardedAd((res) => {
+      if (res.ok) {
+        this.coins = platform.addCoins(PLATFORM.AD_REWARD_COINS);
+        this.notify('金币 +' + PLATFORM.AD_REWARD_COINS);
+        this.vibrate(15);
+      } else if (res.reason === 'notEnded') {
+        this.notify('完整观看广告才能领取');
+      } else {
+        this.notify('广告未就绪，请稍后再试');
+      }
+    });
+  }
+
+  /** 侧边栏复访任务面板按钮：可领奖→领奖；否则跳转侧边栏（官方指引的复访动线） */
+  onSidebarAction() {
+    const st = platform.getSidebarState();
+    if (st.claimable) {
+      if (platform.claimSidebarReward()) {
+        this.coins = platform.getCoins();
+        this.notify('领取成功：金币 +' + PLATFORM.SIDEBAR_REWARD_COINS);
+        this.vibrate(20);
+      } else {
+        this.notify('今日已领取');
+      }
+      return;
+    }
+    if (!st.supported) { this.notify('当前宿主不支持侧边栏'); return; }
+    // 跳转抖音首页侧边栏（审核要求：必须使用 tt.navigateToScene）
+    platform.goSidebar((res) => {
+      if (!res.ok) this.notify('跳转侧边栏失败');
+    });
   }
 
   /* ---------- 输入 ---------- */
 
   handleTap(x, y) {
-    const btns = Render.sceneButtons(this.state, this.L);
+    const btns = Render.sceneButtons(this.state, this.L, this.sceneOpts());
     for (let i = 0; i < btns.length; i++) {
       const b = btns[i];
       if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) {
@@ -96,7 +233,7 @@ class Main {
         return;
       }
     }
-    if (this.state === 'help') { this.setState('menu'); return; }
+    if (this.state === 'help' || this.state === 'sidebar') { this.setState('menu'); return; }
     if (this.state === 'playing') {
       const B = this.L.board;
       if (x >= B.x && x <= B.x + B.size && y >= B.y && y <= B.y + B.size) {
@@ -158,6 +295,34 @@ class Main {
       case 'share':
         rank.share(this.core.score);
         break;
+      /* ---- 平台能力按钮 ---- */
+      case 'sidebarGift':
+        this.setState('sidebar');
+        break;
+      case 'sidebarAction':
+        this.onSidebarAction();
+        break;
+      case 'sidebarClose':
+        this.setState('menu');
+        break;
+      case 'desktop':
+        platform.addToDesktop((res) => {
+          if (res.ok) this.notify('已发起添加到桌面');
+          else this.notify(res.reason === 'unsupported' ? '当前环境不支持添加到桌面' : '添加到桌面未完成');
+        });
+        break;
+      case 'subscribe':
+        platform.requestSubscribe((res) => {
+          if (res.ok) this.notify('已订阅消息提醒');
+          else this.notify(res.reason === 'unsupported' ? '当前环境不支持订阅消息' : '订阅未完成');
+        });
+        break;
+      case 'freeCoins':
+        this.earnCoinsByAd();
+        break;
+      case 'revive':
+        this.tryRevive();
+        break;
       case 'left':
         if (this.core.movePerp(-1)) this.vibrate(5);
         break;
@@ -200,8 +365,11 @@ class Main {
         this.best = r.best;
         this.localRank = r.local;
         this.newBest = r.isBest;
+        this.reviveUsed = false;
         this.vibrate(80);
         this.setState('gameover');
+        // 插屏广告：游戏结束是自然停顿点（platform 内部有最小间隔节流）
+        platform.showInterstitialAd();
       }
     }
   }
@@ -214,6 +382,10 @@ class Main {
     if (this.toast) {
       this.toast.t += dt;
       if (this.toast.t >= this.toast.dur) this.toast = null;
+    }
+    if (this.ptoast) {
+      this.ptoast.t += dt;
+      if (this.ptoast.t >= this.ptoast.dur) this.ptoast = null;
     }
   }
 

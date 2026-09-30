@@ -260,6 +260,26 @@ class GameCore {
     this.spawn(); // 生成下一个（可能触发 gameover）
   }
 
+  /**
+   * 复活：清空棋盘并重新出块（保留分数/关卡/行数）。
+   * 仅在游戏结束后可调用一次；返回是否复活成功。
+   * 供「看激励视频复活 / 金币复活」使用（见 main.js tryRevive）。
+   */
+  revive() {
+    if (!this.gameOver) return false;
+    this.board.reset();
+    this.events.length = 0; // 丢弃残留事件（含 gameover）
+    this.gameOver = false;
+    this.bag = [];
+    this.next = this._drawNext();
+    this.current = null;
+    this.phase = 'idle';
+    this.hintTimer = 0;
+    this.fallTimer = 0;
+    this.spawn();
+    return !this.gameOver;
+  }
+
   /** 取走并清空事件队列 */
   drainEvents() {
     const ev = this.events;

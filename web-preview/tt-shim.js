@@ -114,6 +114,33 @@
     try { if (navigator.vibrate) navigator.vibrate(ms); } catch (e) { /* 忽略 */ }
   }
 
+  /* ---------- 平台能力 mock（侧边栏/桌面/订阅/广告/内购，仅预览用） ---------- */
+  var showCbs = [];
+  function fireShow(opts) {
+    for (var i = 0; i < showCbs.length; i++) {
+      try { showCbs[i](opts); } catch (e) { console.error('[tt-shim]', e); }
+    }
+  }
+  function mockAd(kind) {
+    var closeCbs = [];
+    return {
+      load: function () { return Promise.resolve(); },
+      show: function () {
+        showToast('【预览】播放' + kind + '…');
+        setTimeout(function () {
+          for (var i = 0; i < closeCbs.length; i++) {
+            try { closeCbs[i]({ isEnded: true }); } catch (e) { /* 忽略 */ }
+          }
+        }, kind === '激励视频' ? 900 : 300);
+        return Promise.resolve();
+      },
+      onClose: function (cb) { closeCbs.push(cb); },
+      onError: function () {},
+      onLoad: function () {},
+      destroy: function () {},
+    };
+  }
+
   /* ---------- tt 全局 ---------- */
   window.tt = {
     createCanvas: function () { return canvas; },
@@ -150,7 +177,56 @@
       if (opts && opts.success) { try { opts.success(); } catch (e) { /* 忽略 */ } }
     },
     getOpenDataContext: function () { return null; },
+
+    /* ---- 生命周期（侧边栏复访判定用） ---- */
+    onShow: function (cb) { showCbs.push(cb); },
+    getLaunchOptionsSync: function () { return { scene: '010115', query: {} }; },
+
+    /* ---- 侧边栏复访 ---- */
+    checkScene: function (opts) {
+      if (opts && opts.success) setTimeout(function () { opts.success({ isExist: true }); }, 0);
+    },
+    navigateToScene: function (opts) {
+      showToast('【预览】tt.navigateToScene scene=' + (opts && opts.scene));
+      if (opts && opts.success) setTimeout(function () { opts.success({}); }, 0);
+    },
+
+    /* ---- 添加到桌面 ---- */
+    addToDesktop: function (opts) {
+      showToast('【预览】tt.addToDesktop 已调用');
+      if (opts && opts.success) setTimeout(function () { opts.success({}); }, 0);
+    },
+
+    /* ---- 订阅消息 ---- */
+    requestSubscribeMessage: function (opts) {
+      showToast('【预览】订阅消息 tmplIds=' + ((opts && opts.tmplIds) || []).join(','));
+      if (opts && opts.success) setTimeout(function () { opts.success({}); }, 0);
+    },
+
+    /* ---- 广告 ---- */
+    createRewardedVideoAd: function () { return mockAd('激励视频'); },
+    createInterstitialAd: function () { return mockAd('插屏广告'); },
+
+    /* ---- 内购 ---- */
+    requestMidasPaymentGameItem: function (opts) {
+      showToast('【预览】内购 productId=' + (opts && opts.productId));
+      if (opts && opts.success) setTimeout(function () { opts.success({}); }, 0);
+    },
+
+    /* ---- 弹窗 ---- */
+    showModal: function (opts) {
+      var msg = ((opts && opts.title) ? opts.title + '\n' : '') + ((opts && opts.content) || '');
+      var ok = window.confirm(msg);
+      if (opts && opts.success) setTimeout(function () { opts.success({ confirm: ok, cancel: !ok }); }, 0);
+    },
   };
+
+  // 预览辅助：在控制台执行 __ttMockSidebarShow() 模拟「从抖音首页侧边栏进入游戏」
+  window.__ttMockSidebarShow = function () {
+    fireShow({ scene: '021036', query: {}, launch_from: 'homepage', location: 'sidebar_card' });
+  };
+  // 启动后补发一次普通 onShow（非侧边栏来源）
+  setTimeout(function () { fireShow({ scene: '010115', query: {} }); }, 0);
 
   // 视口变化后重载以重建布局
   var reloadTimer = null;

@@ -357,3 +357,51 @@ test('core：hardDrop 计分（每格 +2）', () => {
   core.hardDrop(); // 从 y=0 落到 y=ROWS-2，共 ROWS-2 格
   assert.strictEqual(core.score, (ROWS - 2) * 2);
 });
+
+/* ================= 复活（看广告/金币复活，见 platform.js） ================= */
+
+test('core：revive 清空棋盘并保留分数/关卡，可继续游戏', () => {
+  const core = new GameCore({ rng: constRng(0.1) });
+  // 人为构造游戏结束：堵死中心出生点
+  const cells = [];
+  const c0 = Math.floor(ROWS / 2) - 2;
+  for (let r = c0; r < c0 + 4; r++) for (let c = c0; c < c0 + 4; c++) cells.push({ x: c, y: r });
+  core.board.lock(cells, 'Z');
+  core.spawn();
+  assert.strictEqual(core.gameOver, true);
+  core.drainEvents();
+
+  core.score = 1234; core.level = 3; core.lines = 20;
+  assert.strictEqual(core.revive(), true, '复活应成功');
+  assert.strictEqual(core.gameOver, false, '复活后不应处于结束态');
+  assert.strictEqual(core.score, 1234, '分数应保留');
+  assert.strictEqual(core.level, 3, '关卡应保留');
+  assert.strictEqual(core.lines, 20, '行数应保留');
+  // 棋盘已清空
+  let filled = 0;
+  for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) if (core.board.grid[r][c]) filled++;
+  assert.strictEqual(filled, 0, '复活后棋盘应清空');
+  // 新方块已生成且可控制
+  assert.ok(core.current, '复活后应生成新方块');
+  assert.strictEqual(core.canControl(), true, '复活后应可操作');
+  assert.strictEqual(core.drainEvents().length, 0, '复活后不应有残留事件');
+});
+
+test('core：revive 仅在结束态生效，且清空后可再次正常结束', () => {
+  const core = new GameCore({ rng: constRng(0.1) });
+  assert.strictEqual(core.revive(), false, '未结束时无效');
+  // 构造结束 → 复活 → 再堵死中心 → 又能正常结束
+  const cells = [];
+  const c0 = Math.floor(ROWS / 2) - 2;
+  for (let r = c0; r < c0 + 4; r++) for (let c = c0; c < c0 + 4; c++) cells.push({ x: c, y: r });
+  core.board.lock(cells, 'Z');
+  core.spawn();
+  assert.strictEqual(core.gameOver, true);
+  core.drainEvents();
+  assert.strictEqual(core.revive(), true);
+  core.board.lock(cells, 'Z');
+  core.current = null;
+  core.spawn();
+  assert.strictEqual(core.gameOver, true, '复活后再次堵死应能结束');
+  assert.ok(core.drainEvents().some((e) => e.type === 'gameover'));
+});

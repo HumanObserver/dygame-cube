@@ -16,6 +16,7 @@ const FILES = [
   'js/gamecore.js',
   'js/render.js',
   'js/input.js',
+  'js/platform.js',
   'js/rank.js',
   'js/main.js',
   'game.js',

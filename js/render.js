@@ -3,7 +3,7 @@
  * 场景：menu / playing / paused / gameover / rank / help
  */
 const {
-  COLS, ROWS, DIRS, PERP, COLORS, ACCENT, BG_TOP, BG_BOTTOM, BOARD_SCALE,
+  COLS, ROWS, DIRS, PERP, COLORS, ACCENT, BG_TOP, BG_BOTTOM, BOARD_SCALE, PLATFORM,
 } = require('./config.js');
 const { SHAPES, cellsOf } = require('./tetromino.js');
 
@@ -52,14 +52,38 @@ function mk(id, r, extra) {
   return b;
 }
 
-function sceneButtons(scene, L) {
+/**
+ * 场景按钮定义（绘制 + 命中检测共用）
+ * @param opts {canRevive, sidebarSupported, sidebarClaimable} 由 main.sceneOpts() 提供
+ */
+function sceneButtons(scene, L, opts) {
+  opts = opts || {};
   const s = L.s, w = L.w, h = L.h;
   const out = [];
   if (scene === 'menu') {
-    const bw = 220 * s, bh = 56 * s, bx = (w - bw) / 2, y0 = h * 0.50;
-    out.push(mk('start', { x: bx, y: y0, w: bw, h: bh }, { text: '开始游戏', primary: true }));
-    out.push(mk('rank', { x: bx, y: y0 + bh + 16 * s, w: bw, h: 48 * s }, { text: '排行榜' }));
-    out.push(mk('help', { x: bx, y: y0 + bh + 16 * s + 64 * s, w: bw, h: 48 * s }, { text: '玩法说明' }));
+    const bw = 220 * s, bh = 56 * s, bx = (w - bw) / 2;
+    let y = h * 0.50;
+    out.push(mk('start', { x: bx, y: y, w: bw, h: bh }, { text: '开始游戏', primary: true }));
+    y += bh + 12 * s;
+    out.push(mk('rank', { x: bx, y: y, w: bw, h: 48 * s }, { text: '排行榜' }));
+    y += 48 * s + 12 * s;
+    out.push(mk('help', { x: bx, y: y, w: bw, h: 48 * s }, { text: '玩法说明' }));
+    y += 48 * s + 12 * s;
+    // 侧边栏复访奖励入口（必接能力；宿主明确不支持时隐藏）
+    if (opts.sidebarSupported !== false) {
+      out.push(mk('sidebarGift', { x: bx, y: y, w: bw, h: 44 * s }, {
+        text: opts.sidebarClaimable ? '侧边栏奖励 · 可领取' : '侧边栏奖励',
+        primary: !!opts.sidebarClaimable,
+      }));
+      y += 44 * s + 12 * s;
+    }
+    // 平台能力小按钮行：添加到桌面 / 订阅提醒 / 免费金币（看激励视频）
+    const gap = 6 * s;
+    const sw = (bw - gap * 2) / 3;
+    const sh = 36 * s;
+    out.push(mk('desktop', { x: bx, y: y, w: sw, h: sh }, { text: '添加到桌面', small2: true }));
+    out.push(mk('subscribe', { x: bx + sw + gap, y: y, w: sw, h: sh }, { text: '订阅提醒', small2: true }));
+    out.push(mk('freeCoins', { x: bx + (sw + gap) * 2, y: y, w: sw, h: sh }, { text: '免费金币', small2: true }));
   } else if (scene === 'playing' || scene === 'paused') {
     const c = L.controls;
     out.push(mk('left', c.left, { glyph: 'perp', sign: -1 }));
@@ -74,14 +98,34 @@ function sceneButtons(scene, L) {
       out.push(mk('tomenu', { x: bx, y: py + (bh + 14 * s) * 2, w: bw, h: bh }, { text: '返回主页' }));
     }
   } else if (scene === 'gameover') {
-    const bw = 220 * s, bh = 50 * s, bx = (w - bw) / 2, py = h * 0.47;
-    out.push(mk('retry', { x: bx, y: py, w: bw, h: bh }, { text: '再来一局', primary: true }));
-    out.push(mk('rank', { x: bx, y: py + (bh + 14 * s), w: bw, h: bh }, { text: '排行榜' }));
-    out.push(mk('share', { x: bx, y: py + (bh + 14 * s) * 2, w: bw, h: bh }, { text: '分享给好友' }));
-    out.push(mk('tomenu', { x: bx, y: py + (bh + 14 * s) * 3, w: bw, h: bh }, { text: '返回主页' }));
+    const bw = 220 * s, bh = 50 * s, bx = (w - bw) / 2;
+    let y = opts.canRevive ? h * 0.42 : h * 0.47;
+    if (opts.canRevive) {
+      // 复活按钮（看激励视频 / 金币复活，见 main.tryRevive），每局限一次
+      out.push(mk('revive', { x: bx, y: y, w: bw, h: bh }, { text: '复活继续', primary: true }));
+      y += bh + 14 * s;
+      out.push(mk('retry', { x: bx, y: y, w: bw, h: bh }, { text: '再来一局' }));
+    } else {
+      out.push(mk('retry', { x: bx, y: y, w: bw, h: bh }, { text: '再来一局', primary: true }));
+    }
+    y += bh + 14 * s;
+    out.push(mk('rank', { x: bx, y: y, w: bw, h: bh }, { text: '排行榜' }));
+    y += bh + 14 * s;
+    out.push(mk('share', { x: bx, y: y, w: bw, h: bh }, { text: '分享给好友' }));
+    y += bh + 14 * s;
+    out.push(mk('tomenu', { x: bx, y: y, w: bw, h: bh }, { text: '返回主页' }));
   } else if (scene === 'rank' || scene === 'help') {
     const bw = 160 * s, bh = 46 * s;
     out.push(mk('back', { x: (w - bw) / 2, y: h - 78 * s, w: bw, h: bh }, { text: '返回' }));
+  } else if (scene === 'sidebar') {
+    // 侧边栏复访任务面板：去侧边栏 / 领取奖励
+    const bw = 220 * s, bh = 50 * s, bx = (w - bw) / 2;
+    out.push(mk('sidebarAction', { x: bx, y: h * 0.565, w: bw, h: bh }, {
+      text: opts.sidebarClaimable ? '立即领奖' : '去首页侧边栏',
+      primary: true,
+    }));
+    const cw = 160 * s;
+    out.push(mk('sidebarClose', { x: (w - cw) / 2, y: h * 0.645, w: cw, h: 44 * s }, { text: '关闭' }));
   }
   return out;
 }
@@ -198,7 +242,9 @@ function drawButton(ctx, b, L, dir, enabled) {
     ctx.fillRect(cx - gap - bw2, cy - bh2 / 2, bw2, bh2);
     ctx.fillRect(cx + gap, cy - bh2 / 2, bw2, bh2);
   } else if (b.text) {
-    text(ctx, b.text, cx, cy + (b.small ? 5 * s : 7 * s), (b.small ? 15 : 17) * s,
+    const fs = b.small2 ? 11 : (b.small ? 15 : 17);
+    const dy = b.small2 ? 4 * s : (b.small ? 5 * s : 7 * s);
+    text(ctx, b.text, cx, cy + dy, fs * s,
       b.primary ? '#ffffff' : 'rgba(255,255,255,0.92)', 'center', true);
   }
   ctx.restore();
@@ -231,12 +277,13 @@ function drawMenu(ctx, L, main, t) {
 
   text(ctx, '引力方块', w / 2, h * 0.30, 42 * s, '#ffffff', 'center', true);
   text(ctx, '四向重力 · 俄罗斯方块变体', w / 2, h * 0.30 + 30 * s, 14 * s, 'rgba(255,255,255,0.65)', 'center', false);
-  text(ctx, '最高分 ' + main.best, w / 2, h * 0.50 - 22 * s, 15 * s, 'rgba(255,215,0,0.9)', 'center', true);
+  text(ctx, '最高分 ' + main.best + ' · 金币 ' + (main.coins || 0), w / 2, h * 0.50 - 22 * s,
+    15 * s, 'rgba(255,215,0,0.9)', 'center', true);
 
-  const btns = sceneButtons('menu', L);
+  const btns = sceneButtons('menu', L, main.sceneOpts ? main.sceneOpts() : {});
   for (let i = 0; i < btns.length; i++) drawButton(ctx, btns[i], L, undefined, true);
 
-  text(ctx, 'v1.0.0 · 抖音小游戏', w / 2, h - 20 * s, 11 * s, 'rgba(255,255,255,0.35)', 'center', false);
+  text(ctx, 'v1.1.0 · 抖音小游戏', w / 2, h - 20 * s, 11 * s, 'rgba(255,255,255,0.35)', 'center', false);
 }
 
 function drawHud(ctx, L, main) {
@@ -471,8 +518,85 @@ function drawGameOver(ctx, L, main) {
     text(ctx, rows[i][1], px2 + pw - 28 * s, yy, 14 * s, '#ffffff', 'right', true);
   }
 
-  const btns = sceneButtons('gameover', L);
+  const btns = sceneButtons('gameover', L, main.sceneOpts ? main.sceneOpts() : {});
   for (let i = 0; i < btns.length; i++) drawButton(ctx, btns[i], L, undefined, true);
+}
+
+/** 侧边栏复访任务面板（必接能力，官方指引：入口奖励 + 跳转侧边栏 + 复访领奖） */
+function drawSidebar(ctx, L, main) {
+  drawOverlay(ctx, L, 0.66);
+  const s = L.s, w = L.w, h = L.h;
+  const px2 = 22 * s, pw = w - 44 * s;
+  const py2 = h * 0.14, ph = h * 0.58;
+  roundRect(ctx, px2, py2, pw, ph, 16 * s);
+  ctx.fillStyle = 'rgba(20,24,44,0.97)';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  text(ctx, '首页侧边栏入口奖励', w / 2, py2 + 40 * s, 20 * s, '#ffffff', 'center', true);
+  text(ctx, '每日从侧边栏进入游戏可领 ' + PLATFORM.SIDEBAR_REWARD_COINS + ' 金币',
+    w / 2, py2 + 66 * s, 13 * s, 'rgba(255,215,0,0.9)', 'center', true);
+
+  const lines = [
+    '① 点击下方「去首页侧边栏」按钮',
+    '② 在侧边栏中点击「引力方块」图标',
+    '③ 返回游戏，点击「立即领奖」',
+  ];
+  for (let i = 0; i < lines.length; i++) {
+    text(ctx, lines[i], px2 + 26 * s, py2 + 106 * s + i * 30 * s, 14 * s, 'rgba(255,255,255,0.85)', 'left', false);
+  }
+
+  const opts = main.sceneOpts ? main.sceneOpts() : {};
+  let status, color;
+  if (opts.sidebarClaimable) {
+    status = '✔ 已检测到侧边栏复访，可领取今日奖励';
+    color = '#69f0ae';
+  } else if (opts.sidebarClaimedToday) {
+    status = '今日奖励已领取，明天再来';
+    color = 'rgba(255,255,255,0.5)';
+  } else if (opts.sidebarSupported === false) {
+    status = '当前宿主不支持侧边栏，请在抖音 App 中打开';
+    color = 'rgba(255,255,255,0.5)';
+  } else {
+    status = '尚未从侧边栏进入，按上述步骤完成即可领奖';
+    color = 'rgba(255,255,255,0.65)';
+  }
+  text(ctx, status, w / 2, h * 0.565 - 20 * s, 12 * s, color, 'center', true);
+
+  const btns = sceneButtons('sidebar', L, opts);
+  for (let i = 0; i < btns.length; i++) {
+    const b = btns[i];
+    const enabled = (b.id !== 'sidebarAction') || opts.sidebarSupported !== false;
+    drawButton(ctx, b, L, undefined, enabled);
+  }
+}
+
+/** 全局浮动提示（平台能力反馈等，所有场景可见） */
+function drawPToast(ctx, L, main) {
+  const p = main.ptoast;
+  if (!p) return;
+  const k = p.t / p.dur;
+  let alpha = 1;
+  if (k < 0.1) alpha = k / 0.1;
+  else if (k > 0.75) alpha = (1 - k) / 0.25;
+  alpha = Math.max(0, Math.min(1, alpha));
+  const s = L.s;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.font = 'bold ' + (13 * s) + 'px sans-serif';
+  const tw = ctx.measureText(p.text).width;
+  const bw = tw + 36 * s, bh = 36 * s;
+  const bx = (L.w - bw) / 2, by = L.h * 0.15;
+  roundRect(ctx, bx, by, bw, bh, bh / 2);
+  ctx.fillStyle = 'rgba(10,12,24,0.9)';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  text(ctx, p.text, L.w / 2, by + bh * 0.68, 13 * s, '#ffffff', 'center', true);
+  ctx.restore();
 }
 
 function drawRank(ctx, L, main, t) {
@@ -581,9 +705,14 @@ function draw(main) {
       drawMenu(ctx, L, main, t);
       drawHelp(ctx, L, main);
       break;
+    case 'sidebar':
+      drawMenu(ctx, L, main, t);
+      drawSidebar(ctx, L, main);
+      break;
     default:
       break;
   }
+  drawPToast(ctx, L, main);
 }
 
 module.exports = { buildLayout, sceneButtons, draw, roundRect };

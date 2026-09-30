@@ -13,6 +13,13 @@
 - **玩家排行**：
   - 本机 TOP10（始终可用，本地持久化）
   - 好友排行榜（开放数据域 + 云端托管数据，需真机登录抖音）
+- **金币与复活**：新手赠币、看激励视频、每日侧边栏复访均可得金币；游戏结束后可「看广告复活」或「金币复活」（每局一次，保留分数继续玩）
+- **平台能力接入**（对应抖音审核检测项，全部带守卫降级，详见 `js/platform.js`）：
+  - 侧边栏复访（必接）：`tt.navigateToScene({scene:'sidebar'})` 跳转 + `tt.checkScene` 可用性判断 + `tt.onShow` 启动来源检测 + 每日复访奖励
+  - 添加到桌面：`tt.addToDesktop`
+  - 订阅消息：`tt.requestSubscribeMessage`
+  - 广告：激励视频 `tt.createRewardedVideoAd`（免费金币 / 复活）+ 插屏 `tt.createInterstitialAd`（结算页，90s 节流）
+  - 内购：`tt.requestMidasPaymentGameItem`（需游戏版号；`PLATFORM.ENABLE_IAP=false` 时购买入口隐藏）
 - **操作方式**：
   - 底部按钮：◀ ▶（沿垂直于重力的方向移动）、旋转、落下（沿重力直达底部）
   - 手势：点击棋盘 = 旋转；沿重力方向滑动 = 快速落底；垂直滑动 = 横向移动
@@ -31,12 +38,13 @@ game/
 │   ├── gamecore.js         # 核心状态机：hint → fall → lock → 升级（纯逻辑）
 │   ├── render.js           # Canvas 2D 渲染与布局
 │   ├── input.js            # 触摸手势（点按 / 滑动）
+│   ├── platform.js         # 平台能力：侧边栏复访/桌面/订阅/广告/内购/金币钱包
 │   ├── rank.js             # 排行榜：本地存储 + 云端托管 + 分享
 │   └── main.js             # 主控制器：游戏循环、场景切换
 ├── openDataContext/
 │   └── index.js            # 开放数据域：好友排行榜渲染（独立上下文）
 └── test/
-    └── core.test.cjs       # 核心逻辑单元测试（26 个用例）
+    └── core.test.cjs       # 核心逻辑单元测试（28 个用例）
 ```
 
 纯逻辑层（config / tetromino / board / gamecore）不依赖任何抖音 API，可直接在 Node 中测试。
@@ -49,9 +57,9 @@ game/
 node --test test/core.test.cjs
 ```
 
-覆盖：旋转与踢墙、行列消除、消除后整体下沉（沉降/连锁消除）、7-bag 随机、四向重力锁定、计分、关卡速度、游戏结束判定等 26 个用例。
+覆盖：旋转与踢墙、行列消除、消除后整体下沉（沉降/连锁消除）、7-bag 随机、四向重力锁定、计分、关卡速度、游戏结束判定、复活（revive）等 28 个用例。
 
-集成冒烟测试（在 Node 中以模拟 tt 环境 + Canvas 打桩运行整个游戏：场景切换、按钮/手势输入、完整一局打到游戏结束、分享、开放数据域渲染）：
+集成冒烟测试（在 Node 中以模拟 tt 环境 + Canvas 打桩运行整个游戏：场景切换、按钮/手势输入、完整一局打到游戏结束、分享、侧边栏复访领奖/跳转、添加到桌面、订阅消息、激励视频得金币、广告复活、插屏节流、开放数据域渲染）：
 
 ```bash
 node web-preview/smoke.cjs
@@ -121,6 +129,20 @@ node web-preview/serve.cjs   # 先保持服务运行
 | `LINES_PER_LEVEL` | 8 | 每关需消除行数 |
 | `SCORE_TABLE` | [0,100,250,500,800] | 同时消 1~4 行的基础分（×关卡数） |
 | `BOARD_SCALE` | 1.0 | 棋盘（方块）整体缩放：调小方块更小，1 为铺满可用宽度 |
+
+平台能力配置集中在 `PLATFORM`（同文件）：
+
+| 配置 | 默认值 | 说明 |
+|---|---|---|
+| `REWARDED_AD_UNIT_ID` | 文档示例占位 | **TODO**：替换为后台创建的激励视频广告位 ID |
+| `INTERSTITIAL_AD_UNIT_ID` | 文档示例占位 | **TODO**：替换为后台创建的插屏广告位 ID |
+| `SUBSCRIBE_TMPL_IDS` | 占位 | **TODO**：替换为后台「功能→订阅消息」创建的模板 ID |
+| `ENABLE_IAP` | `false` | 内购入口开关；拿到版号并配置道具后改 `true` |
+| `IAP` | coins_100 | 内购道具（productId / 价格 / 金币数） |
+| `WELCOME_COINS` | 30 | 新手赠币 |
+| `REVIVE_COIN_COST` | 30 | 金币复活消耗 |
+| `AD_REWARD_COINS` | 50 | 看一次激励视频奖励 |
+| `SIDEBAR_REWARD_COINS` | 60 | 每日侧边栏复访奖励 |
 
 ## 技术说明
 

@@ -4,3 +4,7 @@ node_modules/
 .idea/
 .vscode/
 web-preview/bundle.js
+
+# 本地保存的官方文档参考（不入库、不打包上传）
+/「必接」*.html
+/「必接」*_files/
