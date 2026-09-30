@@ -258,6 +258,120 @@ console.log('控制按钮 OK');
 rankMod.share(main.core.score);
 assert.strictEqual(shareCount, 1, 'shareAppMessage 应被调用');
 
+/* ---------- 新玩法冒烟：半侧沉降 / 过关清场 / 炮台 / 共鸣 / 属性牌 ---------- */
+const Skills = require('../js/skills.js');
+const { SHAPES } = require('../js/tetromino.js');
+const { ROWS: SR, COLS: SC, CARD: SCARD, LEVEL_TARGETS: SLT, SKILL: SSK } = require('../js/config.js');
+
+function freshGame() {
+  main.onButton('start');
+  frames(2, 50);
+  assert.strictEqual(main.state, 'playing');
+  return main.core;
+}
+
+/* 1) 半侧沉降：中间行消除，线上方下沉、线下方保持 */
+{
+  const core = freshGame();
+  core.level = 1;
+  const row = [];
+  for (let c = 0; c < SC; c++) row.push({ x: c, y: 10 });
+  core.board.lock(row, 'I');
+  core.board.lock([{ x: 2, y: 4 }], 'J'); // 消除线之上 → 应下沉
+  core.board.lock([{ x: 2, y: 16 }], 'T'); // 消除线之下 → 应保持
+  core.phase = 'fall';
+  core.current = { type: 'O', matrix: SHAPES.O, dir: 0, x: 0, y: SR - 2 };
+  core.hardDrop();
+  frames(2, 50);
+  assert.strictEqual(core.lines, 1, '半侧沉降冒烟：应消除 1 行');
+  assert.strictEqual(core.board.grid[10][2], 'J', '上半应沉到贴合消除线');
+  assert.strictEqual(core.board.grid[16][2], 'T', '下半应保持原位');
+}
+
+/* 2) 过关清场：积分累加、棋盘清空 */
+{
+  const core = freshGame();
+  core.score = SLT[0] - 100;
+  const row = [];
+  for (let c = 0; c < SC - 2; c++) row.push({ x: c, y: SR - 1 });
+  core.board.lock(row, 'J');
+  core.board.lock([{ x: 6, y: 3 }], 'Z');
+  core.phase = 'fall';
+  core.current = { type: 'O', matrix: SHAPES.O, dir: 0, x: SC - 2, y: SR - 3 };
+  core.hardDrop();
+  frames(2, 50);
+  assert.strictEqual(core.level, 2, '合格分达成 → 第 2 关');
+  assert.strictEqual(core.board.allCells().length, 0, '过关应清场');
+  assert.ok(core.score >= SLT[0], '积分累加不清零: ' + core.score);
+  assert.ok(main.fx.length > 0 || main.toast, '过关应有动效或提示');
+}
+
+/* 3) 炮台：落地开火击落方格，其余方格保持，且有弹道动效 */
+{
+  const core = freshGame();
+  main.fx = []; main.floats = [];
+  core.board.lock([{ x: 8, y: 12 }], 'J');
+  core.board.lock([{ x: 8, y: 6 }], 'Z'); // 穿透 0 → 不应被击落
+  core.phase = 'fall';
+  core.current = {
+    type: 'O', matrix: SHAPES.O, dir: 0, x: 8, y: SR - 2,
+    skill: { kind: 'turret', mx: 0, my: 0, mods: Skills.defaultMods() },
+  };
+  core.hardDrop();
+  frames(2, 50);
+  assert.strictEqual(core.board.grid[12][8], null, '炮台应击落弹道上的方格');
+  assert.strictEqual(core.board.grid[6][8], 'Z', '穿透 0：远处方格不受影响');
+  assert.strictEqual(core.skillKills, 1);
+  assert.ok(core.board.skillAt(8, SR - 2) && core.board.skillAt(8, SR - 2).kind === 'turret', '炮台格应留在场上');
+  assert.ok(main.fx.length >= 1, '应有子弹动效: ' + JSON.stringify(main.fx.map((f) => f.kind)));
+  assert.ok(main.floats.length >= 1, '应有技能加分漂浮字');
+}
+
+/* 4) 共鸣：整行消除时带走同类方格 */
+{
+  const core = freshGame();
+  const row = [];
+  for (let c = 0; c < SC - 2; c++) row.push({ x: c, y: SR - 1 });
+  core.board.lock(row, 'Q');
+  core.board.setSkill(3, SR - 1, { kind: 'resonance', dir: 0, mods: Skills.defaultMods() });
+  core.board.lock([{ x: 7, y: 3 }], 'Q'); // 同类远端方格
+  core.phase = 'fall';
+  core.current = { type: 'O', matrix: SHAPES.O, dir: 0, x: SC - 2, y: SR - 2 };
+  core.hardDrop();
+  frames(2, 50);
+  assert.strictEqual(core.skillKills, 1, '共鸣应带走 1 个同类方格');
+  assert.strictEqual(core.board.allCells().filter((c) => c.type === 'Q').length, 0, '同类方格全部消失');
+  assert.ok(main.fx.some((f) => f.kind === 'resonance' || f.kind === 'blast'), '应有共鸣动效');
+}
+
+/* 5) 属性牌：三选一场景进入 / 选择 / 跳过 */
+{
+  const core = freshGame();
+  core.score = SCARD.INTERVAL;
+  core._syncCards();
+  frames(2, 50);
+  assert.strictEqual(main.state, 'cards', '分数过线应进入属性牌场景');
+  assert.ok(core.pendingCards && core.pendingCards.length === SCARD.CHOICES, '应待发三张牌');
+  const cbs = Render.sceneButtons(main.state, main.L, main.sceneOpts());
+  assert.strictEqual(cbs.length, SCARD.CHOICES + 1, '三张牌 + 跳过按钮');
+  const before = JSON.stringify(core.mods);
+  tapBtn('card0');
+  assert.strictEqual(main.state, 'playing', '选牌后回到游戏');
+  assert.strictEqual(core.pendingCards, null, '选牌后解除暂停');
+  assert.notStrictEqual(JSON.stringify(core.mods), before, '选牌应改变本局构筑');
+  assert.strictEqual(core.cardPicks.length, 1);
+
+  core.score = SCARD.INTERVAL * 2;
+  core._syncCards();
+  frames(2, 50);
+  assert.strictEqual(main.state, 'cards', '第二次过线再次弹牌');
+  tapBtn('cardsSkip');
+  assert.strictEqual(main.state, 'playing', '跳过应回到游戏');
+  assert.strictEqual(core.cardPicks.length, 1, '跳过不记录选择');
+  main.setState('menu'); frames(2);
+}
+console.log('新玩法冒烟 OK — 半侧沉降 / 过关清场 / 炮台 / 共鸣 / 属性牌');
+
 /* ---------- 平台能力冒烟：侧边栏复访 / 桌面 / 订阅 / 广告金币 / 复活 / 插屏 ---------- */
 const platform = require('../js/platform.js');
 const { ROWS: RWS, PLATFORM: PCFG } = require('../js/config.js');

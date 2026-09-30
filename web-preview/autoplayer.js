@@ -206,15 +206,17 @@
       c = finalCells[i];
       if (c.x >= 0 && c.x < cols && c.y >= 0 && c.y < rows) grid[c.y][c.x] = type;
     }
-    /* 消除 + 沉降链（与 board.clearLines/settle 同规则；此处直接实现避免 Board 依赖差异） */
-    var count = clearFull(grid, cols, rows);
-    if (count > 0) {
-      for (;;) {
-        settleDown(grid, cols, rows);
-        var nx = clearFull(grid, cols, rows);
-        if (nx === 0) break;
-        count += nx;
-      }
+    /* 消除 + 半侧沉降链（与 board.clearLines/settle 同规则；此处直接实现避免 Board 依赖差异） */
+    var first = clearFull(grid, cols, rows);
+    var count = first.count;
+    var rowLines = first.rows, colLines = first.cols;
+    while (count > 0) {
+      settleHalf(grid, cols, rows, rowLines, colLines);
+      var nx = clearFull(grid, cols, rows);
+      if (nx.count === 0) break;
+      count += nx.count;
+      rowLines = rowLines.concat(nx.rows);
+      colLines = colLines.concat(nx.cols);
     }
 
     var score = 0;
@@ -380,17 +382,94 @@
       for (r = 0; r < rows; r++) grid[r][c] = null;
     }
     count = rowsToClear.length + colsToClear.length;
-    return count;
+    return { count: count, rows: rowsToClear, cols: colsToClear };
   }
 
-  function settleDown(grid, cols, rows) {
-    for (var c = 0; c < cols; c++) {
-      var write = rows - 1;
-      for (var r = rows - 1; r >= 0; r--) {
-        var v = grid[r][c];
+  /* ===== 半侧沉降仿真（与 js/board.js settle + js/config.js SETTLE 同规则） ===== */
+  var SETTLE = { ROW_SIDE: 'above', COL_SIDE: 'left' };
+
+  function normLines(lines, n) {
+    var out = [], seen = {};
+    for (var i = 0; i < lines.length; i++) {
+      var v = lines[i];
+      if (v >= 0 && v < n && !seen[v]) { seen[v] = 1; out.push(v); }
+    }
+    out.sort(function (a, b) { return a - b; });
+    return out;
+  }
+
+  function compactDown(grid, cols, top, bottom) {
+    if (bottom < top) return;
+    for (var x = 0; x < cols; x++) {
+      var write = bottom;
+      for (var y = bottom; y >= top; y--) {
+        var v = grid[y][x];
         if (!v) continue;
-        if (write !== r) { grid[write][c] = v; grid[r][c] = null; }
+        if (write !== y) { grid[write][x] = v; grid[y][x] = null; }
         write--;
+      }
+    }
+  }
+
+  function compactRight(grid, rows, left, right) {
+    if (right < left) return;
+    for (var y = 0; y < rows; y++) {
+      var write = right;
+      for (var x = right; x >= left; x--) {
+        var v = grid[y][x];
+        if (!v) continue;
+        if (write !== x) { grid[y][write] = v; grid[y][x] = null; }
+        write--;
+      }
+    }
+  }
+
+  /** 只有贴近消除线的一侧朝消除线压实，另一半保持原位 */
+  function settleHalf(grid, cols, rows, rowLines, colLines) {
+    var lines = normLines(rowLines || [], rows), i;
+    if (SETTLE.ROW_SIDE === 'below') {
+      for (i = 0; i < lines.length; i++) {
+        var lo = lines[i], hi = i + 1 < lines.length ? lines[i + 1] - 1 : rows - 1;
+        compactUp(grid, cols, lo, hi);
+      }
+    } else {
+      var top = 0;
+      for (i = 0; i < lines.length; i++) { compactDown(grid, cols, top, lines[i]); top = lines[i] + 1; }
+    }
+    var clines = normLines(colLines || [], cols);
+    if (SETTLE.COL_SIDE === 'right') {
+      for (i = 0; i < clines.length; i++) {
+        var clo = clines[i], chi = i + 1 < clines.length ? clines[i + 1] - 1 : cols - 1;
+        compactLeft(grid, rows, clo, chi);
+      }
+    } else {
+      var left = 0;
+      for (i = 0; i < clines.length; i++) { compactRight(grid, rows, left, clines[i]); left = clines[i] + 1; }
+    }
+  }
+
+  function compactUp(grid, cols, top, bottom) {
+    if (bottom < top) return;
+    for (var x = 0; x < cols; x++) {
+      var write = top;
+      for (var y = top; y <= bottom; y++) {
+        var v = grid[y][x];
+        if (!v) continue;
+        if (write !== y) { grid[write][x] = v; grid[y][x] = null; }
+        write++;
+      }
+    }
+  }
+
+  function compactLeft(grid, rows, left, right) {
+    if (right < left) return;
+    for (var y = 0; y < rows; y++) {
+      var write = left;
+      for (var x = left; x <= right; x++) {
+        var v = grid[y][x];
+        if (!v) continue;
+        if (write !== x) { grid[y][write] = v; grid[y][x] = null; }
+        write++;
       }
     }
   }

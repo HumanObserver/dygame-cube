@@ -1,11 +1,12 @@
 /**
  * 渲染模块：全部 Canvas 2D 绘制逻辑
- * 场景：menu / playing / paused / gameover / rank / help
+ * 场景：menu / playing / cards / paused / gameover / rank / help
  */
 const {
-  COLS, ROWS, DIRS, PERP, COLORS, ACCENT, BG_TOP, BG_BOTTOM, BOARD_SCALE, PLATFORM,
+  COLS, ROWS, DIRS, PERP, COLORS, ACCENT, BG_TOP, BG_BOTTOM, BOARD_SCALE, PLATFORM, SKILL, CARD,
 } = require('./config.js');
 const { SHAPES, cellsOf } = require('./tetromino.js');
+const Skills = require('./skills.js');
 
 /* ================= 布局 ================= */
 
@@ -114,6 +115,19 @@ function sceneButtons(scene, L, opts) {
     out.push(mk('share', { x: bx, y: y, w: bw, h: bh }, { text: '分享给好友' }));
     y += bh + 14 * s;
     out.push(mk('tomenu', { x: bx, y: y, w: bw, h: bh }, { text: '返回主页' }));
+  } else if (scene === 'cards') {
+    // 属性牌三选一（纵向牌面列表，文字更好读）
+    const cards = opts.cards || [];
+    const cw = Math.min(w - 40 * s, 320 * s), ch = 96 * s, gap = 12 * s;
+    const cx = (w - cw) / 2;
+    const cy0 = h * 0.235;
+    const n = Math.min(CARD.CHOICES, cards.length);
+    for (let i = 0; i < n; i++) {
+      out.push(mk('card' + i, { x: cx, y: cy0 + i * (ch + gap), w: cw, h: ch }, { cardIndex: i }));
+    }
+    const sw = 150 * s;
+    out.push(mk('cardsSkip', { x: (w - sw) / 2, y: cy0 + n * (ch + gap) + 4 * s, w: sw, h: 40 * s },
+      { text: '跳过（不加持）', small2: true }));
   } else if (scene === 'rank' || scene === 'help') {
     const bw = 160 * s, bh = 46 * s;
     out.push(mk('back', { x: (w - bw) / 2, y: h - 78 * s, w: bw, h: bh }, { text: '返回' }));
@@ -166,7 +180,10 @@ function text(ctx, str, x, y, size, color, align, bold, alpha) {
   ctx.restore();
 }
 
-/** 以 (cx,cy) 为中心绘制方块小图（按实体格包围盒居中） */
+/**
+ * 以 (cx,cy) 为中心绘制方块小图（按实体格包围盒居中）
+ * 返回 {ox, oy}：局部坐标 (0,0) 对应的像素位置（供技能格标记定位）
+ */
 function drawMiniShape(ctx, type, cx, cy, cell, alpha) {
   const m = SHAPES[type];
   const cs = cellsOf(m);
@@ -191,6 +208,7 @@ function drawMiniShape(ctx, type, cx, cy, cell, alpha) {
     ctx.fill();
   }
   ctx.restore();
+  return { ox: ox, oy: oy };
 }
 
 function drawCell(ctx, px, py, size, color, alpha) {
@@ -203,6 +221,94 @@ function drawCell(ctx, px, py, size, color, alpha) {
   ctx.fillStyle = 'rgba(255,255,255,0.22)';
   roundRect(ctx, px + 4, py + 3.5, Math.max(2, size - 8), Math.max(2, size * 0.12), 2);
   ctx.fill();
+  ctx.restore();
+}
+
+/* ================= 技能格（炮台 / 共鸣）渲染 ================= */
+
+/**
+ * 在已画好的方格上叠加技能标记：
+ *  - 炮台（落地技能）：金色准星炮口，炮口朝向子弹的发射方向（重力反方向）
+ *  - 共鸣（消除技能）：青色同心涟漪 + 中心点
+ * 用描边环 + 图形，不遮挡方格本色（共鸣按颜色匹配，本色必须可辨）
+ */
+function drawSkillBadge(ctx, px, py, size, skill, t) {
+  if (!skill) return;
+  const accent = SKILL.ACCENT[skill.kind] || '#ffffff';
+  const cx = px + size / 2, cy = py + size / 2;
+  const pulse = 0.72 + 0.28 * Math.sin((t || 0) / 220 + (px + py) * 0.02);
+  ctx.save();
+  // 描边环：标明「这是技能格」
+  ctx.globalAlpha = 0.55 + 0.35 * pulse;
+  ctx.strokeStyle = accent;
+  ctx.lineWidth = Math.max(1, size * 0.09);
+  roundRect(ctx, px + 1.5, py + 1.5, size - 3, size - 3, Math.min(7, size * 0.2));
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+
+  if (skill.kind === 'turret') {
+    // 炮台：方形炮座 + 指向发射方向的炮管 + 炮口亮点
+    const d = DIRS[Skills.shotDirs(skill.dir)[0]];
+    const seat = size * 0.30;
+    ctx.fillStyle = 'rgba(12,14,26,0.72)';
+    roundRect(ctx, cx - seat / 2, cy - seat / 2, seat, seat, seat * 0.28);
+    ctx.fill();
+    ctx.strokeStyle = accent;
+    ctx.lineWidth = Math.max(1.2, size * 0.13);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + d.x * size * 0.40, cy + d.y * size * 0.40);
+    ctx.stroke();
+    ctx.globalAlpha = pulse;
+    ctx.fillStyle = accent;
+    ctx.beginPath();
+    ctx.arc(cx + d.x * size * 0.40, cy + d.y * size * 0.40, Math.max(1, size * 0.09), 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    // 共鸣：同心涟漪
+    ctx.strokeStyle = accent;
+    ctx.lineWidth = Math.max(1, size * 0.08);
+    for (let k = 0; k < 2; k++) {
+      ctx.globalAlpha = (k === 0 ? 1 : 0.55) * pulse;
+      ctx.beginPath();
+      ctx.arc(cx, cy, size * (0.16 + k * 0.13), 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = accent;
+    ctx.beginPath();
+    ctx.arc(cx, cy, Math.max(1, size * 0.09), 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+/** 小图标（属性牌牌面 / HUD 技能条用） */
+function drawSkillIcon(ctx, kind, cx, cy, r, t) {
+  const accent = SKILL.ACCENT[kind] || '#ffffff';
+  ctx.save();
+  ctx.strokeStyle = accent;
+  ctx.fillStyle = accent;
+  ctx.lineWidth = Math.max(1, r * 0.18);
+  if (kind === 'turret') {
+    roundRect(ctx, cx - r * 0.55, cy - r * 0.2, r * 1.1, r * 0.9, r * 0.25);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - r * 0.2);
+    ctx.lineTo(cx, cy - r);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(cx, cy - r, r * 0.2, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    for (let k = 0; k < 3; k++) {
+      ctx.globalAlpha = 1 - k * 0.3;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r * (0.28 + k * 0.3), 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
   ctx.restore();
 }
 
@@ -276,14 +382,14 @@ function drawMenu(ctx, L, main, t) {
   }
 
   text(ctx, '引力方块', w / 2, h * 0.30, 42 * s, '#ffffff', 'center', true);
-  text(ctx, '四向重力 · 方块消除玩法', w / 2, h * 0.30 + 30 * s, 14 * s, 'rgba(255,255,255,0.65)', 'center', false);
+  text(ctx, '四向重力 · 方块消除 · 技能构筑', w / 2, h * 0.30 + 30 * s, 14 * s, 'rgba(255,255,255,0.65)', 'center', false);
   text(ctx, '最高分 ' + main.best + ' · 金币 ' + (main.coins || 0), w / 2, h * 0.50 - 22 * s,
     15 * s, 'rgba(255,215,0,0.9)', 'center', true);
 
   const btns = sceneButtons('menu', L, main.sceneOpts ? main.sceneOpts() : {});
   for (let i = 0; i < btns.length; i++) drawButton(ctx, btns[i], L, undefined, true);
 
-  text(ctx, 'v1.2.0 · 抖音小游戏', w / 2, h - 20 * s, 11 * s, 'rgba(255,255,255,0.35)', 'center', false);
+  text(ctx, 'v1.3.0 · 抖音小游戏', w / 2, h - 20 * s, 11 * s, 'rgba(255,255,255,0.35)', 'center', false);
 }
 
 function drawHud(ctx, L, main) {
@@ -325,7 +431,13 @@ function drawNextBox(ctx, L, main, t) {
   ctx.fillStyle = 'rgba(255,255,255,0.06)';
   ctx.fill();
   text(ctx, '下一个', bx.x + 10 * s, bx.y + 15 * s, 10 * s, 'rgba(255,255,255,0.55)', 'left', false);
-  drawMiniShape(ctx, next.type, bx.x + bx.w * 0.38, bx.y + bx.h * 0.58, 10 * s, 1);
+  const mc = 10 * s;
+  const off = drawMiniShape(ctx, next.type, bx.x + bx.w * 0.38, bx.y + bx.h * 0.58, mc, 1);
+  // 技能格预告（预览图上同样标出哪一格带技能）
+  if (next.skill) {
+    drawSkillBadge(ctx, off.ox + next.skill.mx * mc, off.oy + next.skill.my * mc, mc,
+      { kind: next.skill.kind, dir: next.dir }, t);
+  }
   const d = DIRS[next.dir];
   drawTriangle(ctx, bx.x + bx.w * 0.78, bx.y + bx.h * 0.58, d.x, d.y, 16 * s, ACCENT);
 }
@@ -386,11 +498,15 @@ function drawBoard(ctx, L, main, t) {
   const px = (c) => B.x + c.x * cell;
   const py = (c) => B.y + c.y * cell;
 
-  // 已固定格子
+  // 已固定格子（附带技能格标记）
+  const skills = core.board.skills;
   for (let r = 0; r < ROWS; r++) {
     for (let c = 0; c < COLS; c++) {
       const v = core.board.grid[r][c];
-      if (v) drawCell(ctx, B.x + c * cell, B.y + r * cell, cell, COLORS[v], 1);
+      if (!v) continue;
+      const px = B.x + c * cell, py = B.y + r * cell;
+      drawCell(ctx, px, py, cell, COLORS[v], 1);
+      if (skills[r][c]) drawSkillBadge(ctx, px, py, cell, skills[r][c], t);
     }
   }
 
@@ -431,6 +547,14 @@ function drawBoard(ctx, L, main, t) {
     for (let i = 0; i < cells.length; i++) {
       drawCell(ctx, px(cells[i]), py(cells[i]), cell, COLORS[cur.type], alpha);
     }
+    // 技能格预告：落地前就能看到哪一格带技能（按局部坐标匹配，旋转后仍跟随）
+    if (cur.skill) {
+      const sp = { x: cur.x + cur.skill.mx, y: cur.y + cur.skill.my };
+      ctx.save();
+      ctx.globalAlpha = hinting ? 0.6 + 0.3 * (0.5 + 0.5 * Math.sin(t / 150)) : 1;
+      drawSkillBadge(ctx, px(sp), py(sp), cell, { kind: cur.skill.kind, dir: cur.dir }, t);
+      ctx.restore();
+    }
 
     // hint 相位：大号方向箭头（从中心指向重力墙）
     if (hinting) {
@@ -444,18 +568,8 @@ function drawBoard(ctx, L, main, t) {
     }
   }
 
-  // 消行闪光特效
-  for (let i = 0; i < main.fx.length; i++) {
-    const f = main.fx[i];
-    const k = 1 - f.t / f.dur;
-    ctx.save();
-    ctx.globalAlpha = Math.max(0, k) * 0.85;
-    ctx.fillStyle = '#ffffff';
-    for (let j = 0; j < f.cells.length; j++) {
-      ctx.fillRect(px(f.cells[j]), py(f.cells[j]), cell, cell);
-    }
-    ctx.restore();
-  }
+  // 特效：消行闪光 / 炮台弹道 / 共鸣波 / 技能击落闪光
+  drawFx(ctx, L, main, t, px, py, cell);
 
   // 提示浮字
   if (main.toast) {
@@ -464,6 +578,220 @@ function drawBoard(ctx, L, main, t) {
     text(ctx, main.toast.text, B.x + B.size / 2, B.y - 12 * s - (1 - alpha) * 8 * s,
       17 * s, '#ffd54f', 'center', true, Math.max(0, alpha));
   }
+}
+
+/* ================= 特效渲染 ================= */
+
+/** 子弹动画总时长(ms)：按最长弹道 × 每格帧时 + 命中余韵 */
+function bulletDuration(shots) {
+  let maxLen = 1;
+  for (let i = 0; i < (shots || []).length; i++) maxLen = Math.max(maxLen, shots[i].path.length);
+  return maxLen * SKILL.BULLET_FRAME + 260;
+}
+
+/** 一整格白色闪光（消行 / 过关清场） */
+function drawFlashCells(ctx, cells, k, px, py, cell, color, insetRatio) {
+  const alpha = Math.max(0, 1 - k);
+  if (alpha <= 0) return;
+  ctx.save();
+  ctx.globalAlpha = alpha * 0.85;
+  ctx.fillStyle = color || '#ffffff';
+  const inset = cell * (insetRatio || 0) * k;
+  for (let i = 0; i < cells.length; i++) {
+    ctx.fillRect(px(cells[i]) + inset, py(cells[i]) + inset, cell - inset * 2, cell - inset * 2);
+  }
+  ctx.restore();
+}
+
+/** 炮台弹道：从炮口出发的拖尾 + 弹头 + 命中爆点 */
+function drawTurretFx(ctx, f, L, px, py, cell) {
+  const frame = f.t / SKILL.BULLET_FRAME; // 已飞行的格数
+  const accent = SKILL.ACCENT.turret;
+  const cx = (c) => px(c) + cell / 2;
+  const cy = (c) => py(c) + cell / 2;
+  ctx.save();
+  for (let i = 0; i < f.shots.length; i++) {
+    const shot = f.shots[i];
+    const path = shot.path;
+    if (!path.length) continue;
+    const head = Math.min(path.length - 1, Math.floor(frame));
+    // 拖尾：最近 5 格渐隐
+    for (let j = Math.max(0, head - 4); j <= head; j++) {
+      const age = head - j;
+      ctx.globalAlpha = Math.max(0, 0.55 - age * 0.1) * (1 - f.t / (f.dur * 1.4));
+      ctx.fillStyle = accent;
+      const pad = cell * (0.32 + age * 0.03);
+      ctx.beginPath();
+      ctx.arc(cx(path[j]), cy(path[j]), Math.max(1, cell / 2 - pad), 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // 弹头（在 path[head] → path[head+1] 之间插值）
+    const a = path[head];
+    const b = path[Math.min(path.length - 1, head + 1)];
+    const frac = Math.min(1, frame - head);
+    const hx = cx(a) + (cx(b) - cx(a)) * frac;
+    const hy = cy(a) + (cy(b) - cy(a)) * frac;
+    ctx.globalAlpha = Math.max(0, 1 - f.t / (f.dur * 1.2));
+    ctx.fillStyle = '#fff8e1';
+    ctx.beginPath();
+    ctx.arc(hx, hy, Math.max(1.2, cell * 0.16), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = accent;
+    ctx.lineWidth = Math.max(1, cell * 0.07);
+    ctx.stroke();
+    // 命中爆点：十字火花
+    for (let j = 0; j < shot.hits.length; j++) {
+      const hit = shot.hits[j];
+      if (hit.step === undefined || frame < hit.step) continue;
+      const g = Math.min(1, (frame - hit.step) / 2.2);
+      const r = cell * (0.25 + g * 0.55);
+      ctx.globalAlpha = Math.max(0, 1 - g) * 0.9;
+      ctx.strokeStyle = '#ffe082';
+      ctx.lineWidth = Math.max(1, cell * 0.1);
+      ctx.beginPath();
+      ctx.arc(cx(hit), cy(hit), r, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(cx(hit) - r, cy(hit)); ctx.lineTo(cx(hit) + r, cy(hit));
+      ctx.moveTo(cx(hit), cy(hit) - r); ctx.lineTo(cx(hit), cy(hit) + r);
+      ctx.stroke();
+    }
+  }
+  // 炮口闪光
+  if (f.origin && frame < 1.2) {
+    const g = frame / 1.2;
+    ctx.globalAlpha = Math.max(0, 1 - g);
+    ctx.fillStyle = '#fffde7';
+    ctx.beginPath();
+    ctx.arc(cx(f.origin), cy(f.origin), cell * (0.2 + g * 0.4), 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+/** 共鸣波：从共鸣格向外扩散的涟漪 + 同类方格的连线 + 按消失方式的光束 */
+function drawResonanceFx(ctx, f, L, px, py, cell) {
+  const accent = SKILL.ACCENT.resonance;
+  const cx = (c) => px(c) + cell / 2;
+  const cy = (c) => py(c) + cell / 2;
+  ctx.save();
+  for (let i = 0; i < f.waves.length; i++) {
+    const w = f.waves[i];
+    const k = Math.min(1, f.t / f.dur);
+    const fade = Math.max(0, 1 - k);
+    const ox = cx(w.origin), oy = cy(w.origin);
+    // 与同类方格的共鸣连线
+    ctx.strokeStyle = accent;
+    ctx.lineWidth = Math.max(1, cell * 0.06);
+    for (let j = 0; j < w.cells.length; j++) {
+      const c = w.cells[j];
+      const kk = Math.min(1, k * 1.6 - j * 0.004);
+      if (kk <= 0) continue;
+      ctx.globalAlpha = fade * 0.5 * kk;
+      ctx.beginPath();
+      ctx.moveTo(ox, oy);
+      ctx.lineTo(ox + (cx(c) - ox) * kk, oy + (cy(c) - oy) * kk);
+      ctx.stroke();
+    }
+    // 涟漪（两圈向外）
+    for (let j = 0; j < 2; j++) {
+      const r = cell * (0.4 + (k * 2.4 + j * 0.5));
+      ctx.globalAlpha = fade * (j ? 0.3 : 0.6);
+      ctx.beginPath();
+      ctx.arc(ox, oy, r, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    // 消失方式：爆炸圆 / 激光束
+    if (w.pattern === 'bomb') {
+      ctx.globalAlpha = fade * 0.55;
+      ctx.fillStyle = '#ff8a65';
+      ctx.beginPath();
+      ctx.arc(ox, oy, cell * (0.6 + k * 1.5), 0, Math.PI * 2);
+      ctx.fill();
+    } else if (w.pattern === 'laserH' || w.pattern === 'laserV' || w.pattern === 'cross') {
+      const arms = w.pattern === 'laserH' ? [[1, 0], [-1, 0]]
+        : (w.pattern === 'laserV' ? [[0, 1], [0, -1]] : [[1, 0], [-1, 0], [0, 1], [0, -1]]);
+      ctx.globalAlpha = fade * 0.85;
+      ctx.strokeStyle = accent;
+      ctx.lineWidth = Math.max(1.5, cell * (0.26 * (1 - k) + 0.06));
+      const len = cell * (1 + 2 * Math.min(1, k * 1.5));
+      for (let j = 0; j < arms.length; j++) {
+        ctx.beginPath();
+        ctx.moveTo(ox, oy);
+        ctx.lineTo(ox + arms[j][0] * len, oy + arms[j][1] * len);
+        ctx.stroke();
+      }
+    }
+    // 被共鸣带走的方格闪一下
+    ctx.globalAlpha = fade * 0.6;
+    ctx.fillStyle = accent;
+    for (let j = 0; j < w.cells.length; j++) {
+      const c = w.cells[j];
+      const pad = cell * 0.2;
+      ctx.fillRect(px(c) + pad, py(c) + pad, cell - pad * 2, cell - pad * 2);
+    }
+  }
+  ctx.restore();
+}
+
+function drawFx(ctx, L, main, t, px, py, cell) {
+  const list = main.fx || [];
+  for (let i = 0; i < list.length; i++) {
+    const f = list[i];
+    if (f.t < 0) continue;
+    const k = Math.max(0, Math.min(1, f.t / f.dur));
+    const kind = f.kind || 'clear';
+    if (kind === 'clear') {
+      drawFlashCells(ctx, f.cells, k, px, py, cell, '#ffffff', 0);
+    } else if (kind === 'blast') {
+      drawFlashCells(ctx, f.cells, k, px, py, cell, '#ffe082', 0.16);
+    } else if (kind === 'turret') {
+      drawTurretFx(ctx, f, L, px, py, cell);
+    } else if (kind === 'resonance') {
+      drawResonanceFx(ctx, f, L, px, py, cell);
+    }
+  }
+}
+
+/** 漂浮加分字 */
+function drawFloats(ctx, L, main) {
+  const list = main.floats || [];
+  for (let i = 0; i < list.length; i++) {
+    const f = list[i];
+    const k = Math.max(0, Math.min(1, f.t / f.dur));
+    ctx.save();
+    ctx.globalAlpha = k < 0.2 ? k / 0.2 : (1 - k) / 0.8;
+    text(ctx, f.text, f.x, f.y - k * 26 * L.s, 15 * L.s, f.color || '#ffd54f', 'center', true);
+    ctx.restore();
+  }
+}
+
+/** 棋盘下方的技能构筑条：本局已选属性牌的生效值 */
+function drawBuildBar(ctx, L, main) {
+  const core = main.core;
+  if (core.level < SKILL.START_LEVEL && !core.cardPicks.length) return;
+  const B = L.board;
+  const s = L.s;
+  const y = B.y + B.size + 14 * s;
+  if (y > L.h - 100 * s) return; // 空间不足则不画
+  const chips = Skills.buildSummary(core.mods);
+  const cards = core.cardPicks.length;
+  ctx.save();
+  ctx.font = 'bold ' + (11 * s) + 'px sans-serif';
+  const items = chips.map((c) => ({ label: c.label + ' ' + c.text, color: c.accent }));
+  if (cards) items.push({ label: '属性牌 ×' + cards, color: '#ffd54f' });
+  const gap = 14 * s;
+  let total = 0;
+  for (let i = 0; i < items.length; i++) total += ctx.measureText(items[i].label).width + (i ? gap : 0);
+  let x = B.x + B.size / 2 - total / 2;
+  ctx.textBaseline = 'alphabetic';
+  for (let i = 0; i < items.length; i++) {
+    ctx.globalAlpha = 0.85;
+    ctx.fillStyle = items[i].color;
+    ctx.fillText(items[i].label, x, y);
+    x += ctx.measureText(items[i].label).width + gap;
+  }
+  ctx.restore();
 }
 
 function drawControls(ctx, L, main) {
@@ -477,14 +805,118 @@ function drawControls(ctx, L, main) {
   }
 }
 
+/** 按像素宽度折行（最多 maxLines 行，超出用省略号收尾） */
+function wrapText(ctx, str, maxW, maxLines) {
+  const lines = [];
+  let cur = '';
+  for (let i = 0; i < str.length; i++) {
+    const test = cur + str[i];
+    if (cur && ctx.measureText(test).width > maxW) { lines.push(cur); cur = str[i]; }
+    else cur = test;
+  }
+  if (cur) lines.push(cur);
+  if (lines.length > maxLines) {
+    const kept = lines.slice(0, maxLines);
+    const last = kept[maxLines - 1];
+    kept[maxLines - 1] = last.slice(0, Math.max(1, last.length - 1)) + '…';
+    return kept;
+  }
+  return lines;
+}
+
+const TAG_ACCENT = {
+  turret: SKILL.ACCENT.turret,
+  resonance: SKILL.ACCENT.resonance,
+  common: '#b388ff',
+};
+const TAG_LABEL = { turret: '炮台', resonance: '共鸣', common: '通用' };
+
+/** 属性牌三选一面板（分数跨过 CARD.INTERVAL 时弹出，游戏暂停） */
+function drawCards(ctx, L, main) {
+  const s = L.s, w = L.w, h = L.h;
+  drawOverlay(ctx, L, 0.72);
+  const opts = main.sceneOpts ? main.sceneOpts() : {};
+  const cards = opts.cards || [];
+
+  text(ctx, '属性牌 · 三选一', w / 2, h * 0.155, 24 * s, '#ffffff', 'center', true);
+  text(ctx, '选一张，本局后续遇到的技能方块都会带上它', w / 2, h * 0.155 + 24 * s, 12 * s,
+    'rgba(255,255,255,0.62)', 'center', false);
+  text(ctx, '（当前 ' + main.core.score + ' 分 · 每 ' + CARD.INTERVAL + ' 分一次）', w / 2, h * 0.155 + 42 * s,
+    11 * s, 'rgba(255,215,79,0.85)', 'center', false);
+
+  const btns = sceneButtons('cards', L, opts);
+  for (let i = 0; i < cards.length && i < CARD.CHOICES; i++) {
+    const b = btns[i];
+    const card = cards[i];
+    const accent = TAG_ACCENT[card.tag] || '#ffffff';
+    ctx.save();
+    roundRect(ctx, b.x, b.y, b.w, b.h, 14 * s);
+    const g = ctx.createLinearGradient(b.x, b.y, b.x, b.y + b.h);
+    g.addColorStop(0, 'rgba(30,36,66,0.98)');
+    g.addColorStop(1, 'rgba(18,22,42,0.98)');
+    ctx.fillStyle = g;
+    ctx.fill();
+    ctx.strokeStyle = accent;
+    ctx.lineWidth = 1.6;
+    ctx.globalAlpha = 0.85;
+    ctx.stroke();
+    ctx.restore();
+
+    // 左侧色条
+    ctx.save();
+    ctx.globalAlpha = 0.9;
+    ctx.fillStyle = accent;
+    roundRect(ctx, b.x + 5 * s, b.y + 12 * s, 3 * s, b.h - 24 * s, 2 * s);
+    ctx.fill();
+    ctx.restore();
+
+    // 类型标签
+    const chipW = 46 * s, chipH = 18 * s;
+    ctx.save();
+    ctx.globalAlpha = 0.18;
+    ctx.fillStyle = accent;
+    roundRect(ctx, b.x + 14 * s, b.y + 12 * s, chipW, chipH, chipH / 2);
+    ctx.fill();
+    ctx.restore();
+    text(ctx, TAG_LABEL[card.tag] || '属性', b.x + 14 * s + chipW / 2, b.y + 12 * s + chipH * 0.72,
+      10 * s, accent, 'center', true);
+
+    // 牌名
+    text(ctx, card.name, b.x + 14 * s + chipW + 10 * s, b.y + 12 * s + chipH * 0.74, 16 * s, '#ffffff', 'left', true);
+
+    // 说明（自动折行）
+    ctx.save();
+    ctx.font = (12 * s) + 'px sans-serif';
+    const lines = wrapText(ctx, card.desc, b.w - 30 * s, 2);
+    ctx.restore();
+    for (let j = 0; j < lines.length; j++) {
+      text(ctx, lines[j], b.x + 15 * s, b.y + 12 * s + chipH + 18 * s + j * 16 * s, 12 * s,
+        'rgba(255,255,255,0.86)', 'left', false);
+    }
+
+    // 数值变化
+    if (card.value) {
+      text(ctx, card.value, b.x + b.w - 15 * s, b.y + b.h - 10 * s, 11 * s, accent, 'right', true);
+    }
+    // 图标
+    if (card.tag === 'turret' || card.tag === 'resonance') {
+      drawSkillIcon(ctx, card.tag, b.x + b.w - 26 * s, b.y + 22 * s, 11 * s, Date.now());
+    }
+  }
+
+  const skip = btns[cards.length];
+  if (skip) drawButton(ctx, skip, L, undefined, true);
+}
+
 function drawGameScene(ctx, L, main, t) {
   drawHud(ctx, L, main);
   drawNextBox(ctx, L, main, t);
   drawGravBox(ctx, L, main, t);
   drawBoard(ctx, L, main, t);
+  drawBuildBar(ctx, L, main);
+  drawFloats(ctx, L, main);
   drawControls(ctx, L, main);
 }
-
 function drawOverlay(ctx, L, alpha) {
   ctx.save();
   ctx.fillStyle = 'rgba(5,7,15,' + alpha + ')';
@@ -527,6 +959,10 @@ function drawGameOver(ctx, L, main) {
     ['到达关卡', '第 ' + core.level + ' 关'],
     ['消除行数', core.lines + ' 行'],
   ];
+  if (core.skillKills) {
+    rows.push(['技能击落', core.skillKills + ' 格 · +' + core.skillScore]);
+    rows.push(['属性牌', '已选 ' + core.cardPicks.length + ' 张']);
+  }
   const ry0 = py2 + 92 * s;
   for (let i = 0; i < rows.length; i++) {
     const yy = ry0 + i * 24 * s;
@@ -680,15 +1116,18 @@ function drawHelp(ctx, L, main) {
     '· ◀ ▶ 按钮：沿垂直于重力的方向移动',
     '· 点击棋盘任意处：旋转方块',
     '· 沿重力方向滑动棋盘：快速落底',
-    '· 「落下」按钮：立即沿重力落底',
     '· 填满任意整行或整列即可消除得分',
-    '· 消除后剩余方块整体下沉落底，可连锁消除',
-    '· 每关设有合格分：第 1 关 500 分、第 2 关 1500 分…',
-    '· 累计分数达到合格分即过关，下落速度逐关加快',
+    '· 消除后只有贴近消除线的一侧沉降，另一半保持',
+    '· 合格分＝过关：棋盘清场、新关重开，积分累加',
+    '· 第 2 关起出现技能方块（金色炮台 / 青色共鸣）',
+    '· 炮台＝落地时发射能量弹，击落命中的方格',
+    '· 共鸣＝被消除或被击落时，同类方格一起消失',
+    '· 每 ' + CARD.INTERVAL + ' 分弹三张属性牌：子弹数 / 穿透 /',
+    '  反弹 / 共鸣范围 / 爆炸·激光… 本局永久生效',
     '· 中心出生点被堵住时游戏结束',
   ];
   for (let i = 0; i < lines.length; i++) {
-    text(ctx, lines[i], px2 + 22 * s, py2 + 76 * s + i * 27 * s, 13 * s, 'rgba(255,255,255,0.85)', 'left', false);
+    text(ctx, lines[i], px2 + 22 * s, py2 + 72 * s + i * 25 * s, 12.5 * s, 'rgba(255,255,255,0.85)', 'left', false);
   }
 
   const btns = sceneButtons('help', L);
@@ -706,6 +1145,10 @@ function draw(main) {
       break;
     case 'playing':
       drawGameScene(ctx, L, main, t);
+      break;
+    case 'cards':
+      drawGameScene(ctx, L, main, t);
+      drawCards(ctx, L, main);
       break;
     case 'paused':
       drawGameScene(ctx, L, main, t);
@@ -732,4 +1175,4 @@ function draw(main) {
   drawPToast(ctx, L, main);
 }
 
-module.exports = { buildLayout, sceneButtons, draw, roundRect };
+module.exports = { buildLayout, sceneButtons, draw, roundRect, bulletDuration, drawSkillBadge, wrapText };

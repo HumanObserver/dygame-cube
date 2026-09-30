@@ -6,7 +6,8 @@ const Render = require('./render.js');
 const Input = require('./input.js');
 const rank = require('./rank.js');
 const platform = require('./platform.js');
-const { DIRS, PERP, PLATFORM } = require('./config.js');
+const Skills = require('./skills.js');
+const { DIRS, PERP, PLATFORM, SKILL, CARD } = require('./config.js');
 
 const TT = (typeof tt !== 'undefined') ? tt : null;
 
@@ -30,12 +31,13 @@ class Main {
     this.L = Render.buildLayout(this.w, this.h);
     this.core = new GameCore();
 
-    this.state = 'menu'; // menu | playing | paused | gameover | rank | help | sidebar
+    this.state = 'menu'; // menu | playing | cards | paused | gameover | rank | help | sidebar
     this.best = rank.getBest();
     this.localRank = rank.getLocal();
     this.friendCanvas = null;
     this.newBest = false;
-    this.fx = [];      // 消行闪光 [{cells, t, dur}]
+    this.fx = [];      // 特效队列 [{kind, cells/shots/waves, t, dur}]
+    this.floats = [];  // 漂浮加分字 [{text, x, y, t, dur, color}]
     this.toast = null; // 浮字 {text, t, dur}
     this.ptoast = null; // 全局平台提示 {text, t, dur}（所有场景可见）
     this.last = Date.now();
@@ -87,6 +89,7 @@ class Main {
   startGame() {
     this.core.reset();
     this.fx = [];
+    this.floats = [];
     this.toast = null;
     this.newBest = false;
     this.reviveUsed = false;
@@ -103,6 +106,7 @@ class Main {
       sidebarSupported: st.supported,
       sidebarClaimable: st.claimable,
       sidebarClaimedToday: st.claimedToday,
+      cards: this.core.pendingCards || null, // 属性牌三选一（cards 场景）
     };
   }
 
@@ -276,6 +280,18 @@ class Main {
       case 'resume':
         this.state = 'playing';
         break;
+      /* ---- 属性牌三选一 ---- */
+      case 'card0':
+      case 'card1':
+      case 'card2': {
+        const cards = this.core.pendingCards;
+        if (cards && cards[+id.slice(-1)]) this.chooseCard(cards[+id.slice(-1)].id);
+        break;
+      }
+      case 'cardsSkip':
+        this.core.skipCards();
+        this.state = 'playing';
+        break;
       case 'pause':
         if (this.state === 'playing') this.state = 'paused';
         break;
@@ -354,12 +370,35 @@ class Main {
     for (let i = 0; i < evs.length; i++) {
       const ev = evs[i];
       if (ev.type === 'clear') {
-        this.fx.push({ cells: ev.cells, t: 0, dur: 300 });
+        this.fx.push({ kind: 'clear', cells: ev.cells, t: 0, dur: 300 });
         this.toast = { text: ev.count >= 2 ? ('消除 x' + ev.count + '！') : '消除！', t: 0, dur: 900 };
         this.vibrate(20);
+      } else if (ev.type === 'turret') {
+        // 炮台落地开火：弹道动画 + 被击落方格闪光
+        const dur = Render.bulletDuration(ev.shots);
+        if (ev.shots.length) this.fx.push({ kind: 'turret', origin: ev.origin, shots: ev.shots, t: 0, dur });
+        if (ev.count) this.fx.push({ kind: 'blast', cells: ev.cells, t: 0, dur: 320 });
+        this._floatSkillScore(ev, '炮台');
+        this.vibrate(ev.count ? 25 : 10);
+      } else if (ev.type === 'resonance') {
+        this.fx.push({ kind: 'resonance', waves: ev.waves, t: 0, dur: 460 });
+        if (ev.count) this.fx.push({ kind: 'blast', cells: ev.cells, t: 0, dur: 320 });
+        this._floatSkillScore(ev, '共鸣');
+        this.vibrate(ev.count ? 30 : 10);
       } else if (ev.type === 'levelup') {
-        this.toast = { text: '第 ' + (ev.level - 1) + ' 关合格！第 ' + ev.level + ' 关提速', t: 0, dur: 1600 };
+        if (ev.cells && ev.cells.length) this.fx.push({ kind: 'clear', cells: ev.cells, t: 0, dur: 420 });
+        const skillTip = ev.skills && ev.level === SKILL.START_LEVEL ? '（技能方块已登场）' : '';
+        this.toast = {
+          text: '第 ' + (ev.level - 1) + ' 关合格！清场进入第 ' + ev.level + ' 关' + skillTip,
+          t: 0, dur: 1900,
+        };
         this.vibrate(30);
+      } else if (ev.type === 'cards') {
+        // 分数跨过属性牌线：弹出三选一（牌池见底则不打断对局）
+        if (ev.cards && ev.cards.length && this.state === 'playing') this.setState('cards');
+      } else if (ev.type === 'cardpick') {
+        const tag = Skills.TAG_LABEL[ev.tag] || '属性';
+        this.notify('已获得「' + ev.name + '」（' + tag + '系）');
       } else if (ev.type === 'gameover') {
         const r = rank.submit(this.core.score, this.core.level, this.core.lines);
         this.best = r.best;
@@ -374,10 +413,30 @@ class Main {
     }
   }
 
+  /** 技能消失方格的漂浮加分 */
+  _floatSkillScore(ev, label) {
+    if (!ev.score || !ev.cells || !ev.cells.length) return;
+    const B = this.L.board;
+    const ox = B.x + B.size / 2, oy = B.y + B.size * 0.34;
+    this.floats.push({ text: label + ' +' + ev.score, x: ox, y: oy, t: 0, dur: 900, color: '#ffe082' });
+  }
+
+  /** 属性牌三选一：选牌并恢复对局 */
+  chooseCard(id) {
+    if (!this.core.pickCard(id)) return;
+    this.state = 'playing';
+    this.fx = [];
+    this.vibrate(20);
+  }
+
   updateFx(dt) {
     for (let i = this.fx.length - 1; i >= 0; i--) {
       this.fx[i].t += dt;
       if (this.fx[i].t >= this.fx[i].dur) this.fx.splice(i, 1);
+    }
+    for (let i = this.floats.length - 1; i >= 0; i--) {
+      this.floats[i].t += dt;
+      if (this.floats[i].t >= this.floats[i].dur) this.floats.splice(i, 1);
     }
     if (this.toast) {
       this.toast.t += dt;

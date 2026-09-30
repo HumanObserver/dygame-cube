@@ -13,6 +13,7 @@ const FILES = [
   'js/config.js',
   'js/tetromino.js',
   'js/board.js',
+  'js/skills.js',
   'js/gamecore.js',
   'js/render.js',
   'js/input.js',

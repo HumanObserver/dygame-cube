@@ -1,9 +1,12 @@
 /**
  * 游戏核心逻辑（纯 JS，无平台依赖，可在 Node 中单元测试）
  *
- * 相位机：idle → hint(下落前提示) → fall(下落中) → 锁定/消行+沉降 → 生成下一个
+ * 相位机：idle → hint(下落前提示) → fall(下落中) → 锁定 → 落地技能 → 消行+共鸣+半侧沉降 → 生成下一个
  * 方块从棋盘中心生成，重力方向随机（下/左/上/右），填满整行或整列即消除。
- * 消除后场上剩余方块整体下沉落底（每列向下压实），下沉凑齐的新行列连锁消除。
+ *
+ * 关卡：累计分数达到「合格分」即过关 → 棋盘整局清场、新关卡重新开局（积分继续累加）。
+ * 技能方块：第 2 关起方块上会出现技能格（炮台＝落地释放 / 共鸣＝被消除或被击落时释放）。
+ * 属性牌：分数每跨过 CARD.INTERVAL 分弹三张牌三选一，选中后本局后续技能方块都带上该属性。
  */
 const {
   COLS, ROWS, DIRS, PERP, TYPES,
@@ -12,9 +15,11 @@ const {
   levelTarget: configLevelTarget,
   SCORE_TABLE, SCORE_EXTRA,
   SOFT_DROP_SCORE, HARD_DROP_SCORE,
+  SKILL, CARD,
 } = require('./config.js');
 const { SHAPES, rotateCW, cellsOf, cloneMatrix } = require('./tetromino.js');
 const Board = require('./board.js');
+const Skills = require('./skills.js');
 
 // 旋转时依次尝试的踢墙偏移
 const KICKS = [
@@ -27,7 +32,7 @@ class GameCore {
   constructor(opts) {
     opts = opts || {};
     this.rng = opts.rng || Math.random; // 可注入随机源，便于测试
-    this.events = [];                   // 事件队列：lock / clear / levelup / gameover
+    this.events = [];                   // 事件队列：lock / clear / turret / resonance / levelup / cards / gameover
     this.board = new Board(COLS, ROWS);
     this.reset();
   }
@@ -38,6 +43,13 @@ class GameCore {
     this.level = 1;
     this.lines = 0;
     this.gameOver = false;
+    // 本局构筑（属性牌）与技能统计
+    this.mods = Skills.defaultMods();
+    this.cardPicks = [];
+    this.pendingCards = null;
+    this.cardTarget = CARD.INTERVAL > 0 ? CARD.INTERVAL : Infinity;
+    this.skillKills = 0;
+    this.skillScore = 0;
     this.bag = [];
     this.next = this._drawNext();
     this.current = null;
@@ -47,7 +59,7 @@ class GameCore {
     this.spawn();
   }
 
-  /* ---------- 随机出块：7-bag（每 7 个一块袋，袋内洗牌） ---------- */
+  /* ---------- 随机出块：7-bag（每 7 个一块袋，袋内洗牌）+ 技能格 ---------- */
 
   _drawType() {
     if (this.bag.length === 0) {
@@ -62,8 +74,22 @@ class GameCore {
     return this.bag.pop();
   }
 
+  /**
+   * 为本块抽一个技能格：从 START_LEVEL 关起按概率出现，
+   * 命中后记录「局部矩阵坐标 + 当时的属性快照」（旋转/移动后仍能对上同一格）。
+   */
+  _rollSkill(type) {
+    if (this.level < SKILL.START_LEVEL) return null;
+    if (this.rng() >= Skills.skillChance(this.mods)) return null;
+    const kind = Skills.rollKind(this.rng);
+    const cells = cellsOf(SHAPES[type]);
+    const pick = cells[Math.floor(this.rng() * cells.length) % cells.length];
+    return { kind, mx: pick.x, my: pick.y, mods: Skills.cloneMods(this.mods) };
+  }
+
   _drawNext() {
-    return { type: this._drawType(), dir: Math.floor(this.rng() * 4) };
+    const type = this._drawType();
+    return { type: type, dir: Math.floor(this.rng() * 4), skill: this._rollSkill(type) };
   }
 
   /* ---------- 关卡参数 ---------- */
@@ -83,13 +109,67 @@ class GameCore {
 
   /**
    * 合格判定：累计分数达到当前关合格分即过关升 1 关（分数一次跨越多条合格线时连升）。
-   * 在每次加分后调用；升级会推入 levelup 事件（level = 升入的新关卡）。
+   * 过关＝清场重开：棋盘上所有已固定方格清空、当前方块作废，积分保留继续累加。
    */
   _syncLevel() {
+    if (this.gameOver) return;
     while (this.score >= this.levelTarget(this.level)) {
       this.level++;
-      this.events.push({ type: 'levelup', level: this.level, target: this.levelTarget(this.level) });
+      this._startLevel();
     }
+  }
+
+  /** 新关卡开局：清场 + 推入 levelup 事件（随后的 spawn 由 update/_lock 负责） */
+  _startLevel() {
+    const cells = this.board.allCells();
+    this.board.reset();
+    this.current = null;
+    this.phase = 'idle';
+    this.hintTimer = 0;
+    this.fallTimer = 0;
+    this.events.push({
+      type: 'levelup',
+      level: this.level,
+      target: this.levelTarget(this.level),
+      cells: cells,
+      skills: this.level >= SKILL.START_LEVEL,
+    });
+  }
+
+  /**
+   * 属性牌判定：分数每跨过 cardTarget（CARD.INTERVAL 的整数倍）弹一次三选一，
+   * 选择前游戏暂停（update / canControl 均被 pendingCards 挡住）。
+   */
+  _syncCards() {
+    if (!(CARD.INTERVAL > 0)) return;
+    while (this.score >= this.cardTarget) {
+      this.cardTarget += CARD.INTERVAL;
+      if (this.gameOver) continue;
+      const offer = Skills.offerCards(this.rng, this.mods, CARD.CHOICES);
+      this.events.push({ type: 'cards', cards: offer });
+      if (offer.length) this.pendingCards = offer; // 牌池见底则直接跳过
+    }
+  }
+
+  /** 选择一张属性牌（牌面 id），立即生效并恢复游戏；返回选中的牌 */
+  pickCard(id) {
+    if (!this.pendingCards) return null;
+    let view = null;
+    for (let i = 0; i < this.pendingCards.length; i++) if (this.pendingCards[i].id === id) view = this.pendingCards[i];
+    if (!view) return null;
+    const card = Skills.applyCard(this.mods, id);
+    this.pendingCards = null;
+    this.cardPicks.push(id);
+    this.events.push({ type: 'cardpick', id: id, tag: view.tag, name: view.name });
+    return card;
+  }
+
+  /** 放弃本次三选一 */
+  skipCards() {
+    if (!this.pendingCards) return false;
+    this.pendingCards = null;
+    this.events.push({ type: 'cardskip' });
+    return true;
   }
 
   /* ---------- 坐标换算 ---------- */
@@ -133,6 +213,7 @@ class GameCore {
       dir: piece.dir,
       x: piece.x + dx,
       y: piece.y + dy,
+      skill: piece.skill || null, // 技能格跟着方块一起走
     };
   }
 
@@ -146,6 +227,7 @@ class GameCore {
       type: n.type,
       matrix,
       dir: n.dir,
+      skill: n.skill || null,
       // 棋盘中心生成
       x: Math.floor((COLS - matrix.length) / 2),
       y: Math.floor((ROWS - matrix.length) / 2),
@@ -155,6 +237,7 @@ class GameCore {
       this.current = piece;
       this.phase = 'over';
       this.gameOver = true;
+      this.pendingCards = null;
       this.events.push({ type: 'gameover' });
       return;
     }
@@ -165,12 +248,17 @@ class GameCore {
   }
 
   canControl() {
-    return !this.gameOver && !!this.current && (this.phase === 'hint' || this.phase === 'fall');
+    return !this.gameOver && !this.pendingCards && !!this.current && (this.phase === 'hint' || this.phase === 'fall');
   }
 
   /** 主循环驱动：dt 为毫秒 */
   update(dt) {
-    if (this.gameOver || !this.current) return;
+    if (this.gameOver || this.pendingCards) return;
+    if (!this.current) {
+      // 过关清场等情况下方块作废：立即补一块
+      if (this.phase !== 'over') this.spawn();
+      return;
+    }
     if (this.phase === 'hint') {
       this.hintTimer -= dt;
       if (this.hintTimer <= 0) this.phase = 'fall';
@@ -183,7 +271,9 @@ class GameCore {
       while (this.fallTimer >= iv && guard++ < 64) {
         this.fallTimer -= iv;
         if (!this._stepGravity(true)) break; // 落底锁定
+        if (!this.current) break;            // 过关清场（升关）导致方块作废
       }
+      if (!this.current && !this.gameOver && !this.pendingCards) this.spawn();
     }
   }
 
@@ -235,32 +325,109 @@ class GameCore {
     if (!this.canControl()) return;
     this.phase = 'fall';
     let dist = 0;
-    while (this._stepGravity(false)) dist++;
+    while (this.current && this._stepGravity(false)) dist++;
+    if (!this.current) return; // 锁定过程中已过关清场
     this.score += dist * HARD_DROP_SCORE;
     this._syncLevel();
+    this._syncCards();
   }
 
-  /* ---------- 锁定 / 消行 / 升级 ---------- */
+  /* ---------- 锁定 / 技能 / 消行 / 沉降 ---------- */
+
+  /** 技能消失方格的计分（每格基础分 + 属性牌加成，×关卡） */
+  _skillScore(count) {
+    if (!count) return 0;
+    const s = Skills.cellScore(this.mods) * this.level * count;
+    this.score += s;
+    this.skillKills += count;
+    this.skillScore += s;
+    return s;
+  }
+
+  /** 炮台落地开火：击落方格（其余方格保持原位，不引发沉降），并级联引爆被击落的共鸣格 */
+  _fireTurret(shot) {
+    const res = Skills.fireTurret(this.board, shot.x, shot.y, shot.dir, shot.mods);
+    let hits = 0;
+    const seeds = [];
+    for (let i = 0; i < res.shots.length; i++) {
+      for (let j = 0; j < res.shots[i].hits.length; j++) { seeds.push(res.shots[i].hits[j]); hits++; }
+    }
+    const casc = Skills.cascadeResonance(this.board, seeds);
+    const cells = seeds.concat(casc.destroyed);
+    const score = this._skillScore(cells.length);
+    this.events.push({
+      type: 'turret', origin: res.origin, dir: shot.dir, shots: res.shots,
+      cells: cells, count: cells.length, hits, score,
+    });
+    if (casc.waves.length) {
+      this.events.push({ type: 'resonance', waves: casc.waves, cells: casc.destroyed, count: casc.destroyed.length, score: 0 });
+    }
+    return score;
+  }
+
+  /** 共鸣（消除技能）：被消除/被击落的共鸣格 → 同类方格一同消失（可级联） */
+  _resonance(seeds) {
+    const casc = Skills.cascadeResonance(this.board, seeds);
+    if (!casc.waves.length) return 0;
+    const score = this._skillScore(casc.destroyed.length);
+    this.events.push({ type: 'resonance', waves: casc.waves, cells: casc.destroyed, count: casc.destroyed.length, score });
+    return score;
+  }
 
   _lock() {
-    const cells = this.cells(this.current);
-    this.board.lock(cells, this.current.type);
+    const piece = this.current;
+    const cells = this.cells(piece);
+    this.board.lock(cells, piece.type);
+
+    // 技能格落位（按局部矩阵坐标匹配，旋转/移动后仍指向同一格）
+    let landTurret = null;
+    if (piece.skill) {
+      const local = cellsOf(piece.matrix);
+      for (let i = 0; i < local.length; i++) {
+        if (local[i].x === piece.skill.mx && local[i].y === piece.skill.my) {
+          const skill = { kind: piece.skill.kind, dir: piece.dir, mods: piece.skill.mods };
+          this.board.setSkill(cells[i].x, cells[i].y, skill);
+          if (piece.skill.kind === 'turret') {
+            landTurret = { x: cells[i].x, y: cells[i].y, dir: piece.dir, mods: piece.skill.mods };
+          }
+          break;
+        }
+      }
+    }
     this.events.push({ type: 'lock', cells: cells.slice() });
 
+    // 1) 落地技能：炮台开火（先于消行判定：击出的空洞可能让本行不再凑齐）
+    if (landTurret) this._fireTurret(landTurret);
+
+    // 2) 行列消除 → 共鸣 → 半侧沉降 → 连锁消除
     const cleared = this.board.clearLines();
     if (cleared.count > 0) {
-      // 消除 → 沉降 循环：消除后剩余方块整体下沉（每列向下压实，不再悬空）；
-      // 下沉可能凑齐新的整行/整列 → 继续消除并沉降，直到稳定（连锁消除合并计数）
       let count = cleared.count;
       const allCells = cleared.cells.slice();
+      let rows = cleared.rows.slice();
+      let cols = cleared.cols.slice();
+      let wave = cleared;
       let settledMoved = 0;
       for (;;) {
-        const settled = this.board.settle();
+        // 被消除的格子里带共鸣技能的，把同类方格一起带走
+        const seeds = [];
+        for (let i = 0; i < wave.cells.length; i++) {
+          const c = wave.cells[i];
+          if (c.skill && c.skill.kind === 'resonance') seeds.push(c);
+        }
+        if (seeds.length) this._resonance(seeds);
+
+        // 半侧沉降：靠近消除线的一侧贴合消除线，另一半保持原位
+        const settled = this.board.settle(rows, cols);
         settledMoved += settled.moved;
+
         const next = this.board.clearLines();
         if (next.count === 0) break;
         count += next.count;
         for (let i = 0; i < next.cells.length; i++) allCells.push(next.cells[i]);
+        rows = rows.concat(next.rows);
+        cols = cols.concat(next.cols);
+        wave = next;
       }
 
       let base = SCORE_TABLE[Math.min(count, 4)];
@@ -268,9 +435,10 @@ class GameCore {
       this.score += base * this.level;
       this.lines += count;
       this.events.push({ type: 'clear', cells: allCells, count, settled: settledMoved });
-
-      this._syncLevel(); // 累计分数达到当前关合格分 → 过关升级
     }
+
+    this._syncLevel(); // 累计分数达到当前关合格分 → 过关升 1 关（清场重开）
+    this._syncCards(); // 跨过属性牌分数线 → 三选一
 
     this.current = null;
     this.phase = 'idle';
@@ -278,7 +446,7 @@ class GameCore {
   }
 
   /**
-   * 复活：清空棋盘并重新出块（保留分数/关卡/行数）。
+   * 复活：清空棋盘并重新出块（保留分数/关卡/行数/本局构筑）。
    * 仅在游戏结束后可调用一次；返回是否复活成功。
    * 供「看激励视频复活 / 金币复活」使用（见 main.js tryRevive）。
    */
@@ -287,6 +455,7 @@ class GameCore {
     this.board.reset();
     this.events.length = 0; // 丢弃残留事件（含 gameover）
     this.gameOver = false;
+    this.pendingCards = null;
     this.bag = [];
     this.next = this._drawNext();
     this.current = null;
