@@ -31,7 +31,7 @@ function pickSeed(dateStr) {
   const { pool, entry } = pickSeed(dateStr);
   const seed = val('--seed', null) ? parseInt(val('--seed', '0'), 10) : entry.seed;
   const finish = pool.finishAfterMs || 60000;
-  const name = 'gravity-cube-ai-' + stamp;
+  const name = 'gravity-cube-' + stamp;
 
   console.log('[daily] seed=' + seed + ' finish=' + finish + ' name=' + name);
   const r = spawnSync(NODE, [

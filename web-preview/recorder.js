@@ -342,24 +342,7 @@
     cctx.shadowOffsetY = 0;
   }
 
-  function drawBadge() {
-    // 顶部小徽标：AI 自动游玩（抖音发布合规提示）
-    cctx.font = '500 30px "Microsoft YaHei",sans-serif';
-    cctx.textAlign = 'left';
-    cctx.textBaseline = 'middle';
-    var label = 'AI 自动游玩';
-    var tw = cctx.measureText(label).width;
-    var bx = 28, by = 1500, bw = tw + 74, bh = 52;
-    roundRect(bx, by, bw, bh, 26);
-    cctx.fillStyle = 'rgba(10,12,24,0.55)';
-    cctx.fill();
-    cctx.fillStyle = '#7dd3fc';
-    cctx.beginPath();
-    cctx.arc(bx + 26, by + bh / 2, 8, 0, Math.PI * 2);
-    cctx.fill();
-    cctx.fillStyle = 'rgba(255,255,255,0.88)';
-    cctx.fillText(label, bx + 44, by + bh / 2 + 1);
-  }
+  function drawBadge() { /* 真人玩家人设：不显示任何 AI/自动游玩标识 */ }
 
   function frame() {
     requestAnimationFrame(frame);
