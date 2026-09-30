@@ -52,6 +52,9 @@ function build() {
     parts.push(code);
     parts.push('});');
   }
+  /* 暴露模块取用口：autoplayer 等录制/仿真脚本用它拿到「与游戏同一份实例」的
+   * Board / Skills / config，从而让 bot 的前瞻模拟与真实规则零漂移。 */
+  parts.push('if(typeof window!=="undefined"){window.__bundleRequire=function(id){return req(id,null);};}');
   parts.push('req("game.js");');
   parts.push('})();');
   fs.writeFileSync(OUT, parts.join('\n'), 'utf8');

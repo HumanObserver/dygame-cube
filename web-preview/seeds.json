@@ -1,405 +1,339 @@
 {
-  "generatedAt": "2026-09-30 16:56",
-  "criteria": "finishAfterMs=60000; video 70~102s; clears>=2; level>=2; 0 mismatch (simulate.cjs --search 1..140，含半侧沉降/过关清场/技能格规则)",
-  "botSeed": 777,
-  "finishAfterMs": 60000,
-  "primary": 35,
-  "seeds": [
-    {
-      "seed": 35,
-      "playS": 66.9,
-      "videoS": 77.4,
-      "pieces": 37,
-      "score": 889,
-      "level": 2,
-      "lines": 3,
-      "clearEvents": 2,
-      "maxChain": 2,
-      "clearAt": [
-        31,
-        49.6
-      ],
-      "levelupAt": [
-        49.6
-      ]
-    },
-    {
-      "seed": 121,
-      "playS": 64.7,
-      "videoS": 75.2,
-      "pieces": 35,
-      "score": 979,
-      "level": 2,
-      "lines": 3,
-      "clearEvents": 2,
-      "maxChain": 2,
-      "clearAt": [
-        36.9,
-        55.2
-      ],
-      "levelupAt": [
-        36.9
-      ]
-    },
-    {
-      "seed": 14,
-      "playS": 75.5,
-      "videoS": 86,
-      "pieces": 42,
-      "score": 730,
-      "level": 2,
-      "lines": 2,
-      "clearEvents": 2,
-      "maxChain": 1,
-      "clearAt": [
-        47.4,
-        51.2
-      ],
-      "levelupAt": [
-        51.2
-      ]
-    },
-    {
-      "seed": 20,
-      "playS": 72.3,
-      "videoS": 82.8,
-      "pieces": 39,
-      "score": 769,
-      "level": 2,
-      "lines": 2,
-      "clearEvents": 2,
-      "maxChain": 1,
-      "clearAt": [
-        31.5,
-        49.2
-      ],
-      "levelupAt": [
-        49.2
-      ]
-    },
-    {
-      "seed": 23,
-      "playS": 67.7,
-      "videoS": 78.2,
-      "pieces": 36,
-      "score": 880,
-      "level": 2,
-      "lines": 2,
-      "clearEvents": 2,
-      "maxChain": 1,
-      "clearAt": [
-        25.8,
-        44.4
-      ],
-      "levelupAt": [
-        44.4
-      ]
-    },
-    {
-      "seed": 24,
-      "playS": 71.6,
-      "videoS": 82.1,
-      "pieces": 39,
-      "score": 731,
-      "level": 2,
-      "lines": 2,
-      "clearEvents": 2,
-      "maxChain": 1,
-      "clearAt": [
-        20.3,
-        48.2
-      ],
-      "levelupAt": [
-        48.2
-      ]
-    },
-    {
-      "seed": 29,
-      "playS": 71.7,
-      "videoS": 82.2,
-      "pieces": 39,
-      "score": 742,
-      "level": 2,
-      "lines": 2,
-      "clearEvents": 2,
-      "maxChain": 1,
-      "clearAt": [
-        21.4,
-        40.6
-      ],
-      "levelupAt": [
-        40.6
-      ]
-    },
-    {
-      "seed": 30,
-      "playS": 67.3,
-      "videoS": 77.8,
-      "pieces": 36,
-      "score": 739,
-      "level": 2,
-      "lines": 2,
-      "clearEvents": 2,
-      "maxChain": 1,
-      "clearAt": [
-        27,
-        50
-      ],
-      "levelupAt": [
-        50
-      ]
-    },
-    {
-      "seed": 36,
-      "playS": 69.3,
-      "videoS": 79.8,
-      "pieces": 38,
-      "score": 775,
-      "level": 2,
-      "lines": 2,
-      "clearEvents": 2,
-      "maxChain": 1,
-      "clearAt": [
-        32.9,
-        36.7
-      ],
-      "levelupAt": [
-        36.7
-      ]
-    },
-    {
-      "seed": 39,
-      "playS": 69,
-      "videoS": 79.5,
-      "pieces": 38,
-      "score": 714,
-      "level": 2,
-      "lines": 2,
-      "clearEvents": 2,
-      "maxChain": 1,
-      "clearAt": [
-        35.7,
-        49.6
-      ],
-      "levelupAt": [
-        49.6
-      ]
-    },
-    {
-      "seed": 40,
-      "playS": 68.5,
-      "videoS": 79,
-      "pieces": 36,
-      "score": 763,
-      "level": 2,
-      "lines": 2,
-      "clearEvents": 2,
-      "maxChain": 1,
-      "clearAt": [
-        31.8,
-        43.7
-      ],
-      "levelupAt": [
-        43.7
-      ]
-    },
-    {
-      "seed": 41,
-      "playS": 70.1,
-      "videoS": 80.6,
-      "pieces": 38,
-      "score": 790,
-      "level": 2,
-      "lines": 2,
-      "clearEvents": 2,
-      "maxChain": 1,
-      "clearAt": [
-        43.9,
-        45.7
-      ],
-      "levelupAt": [
-        45.7
-      ]
-    },
-    {
-      "seed": 50,
-      "playS": 66.4,
-      "videoS": 76.9,
-      "pieces": 36,
-      "score": 794,
-      "level": 2,
-      "lines": 2,
-      "clearEvents": 2,
-      "maxChain": 1,
-      "clearAt": [
-        36.5,
-        42.5
-      ],
-      "levelupAt": [
-        42.5
-      ]
-    },
-    {
-      "seed": 54,
-      "playS": 67.3,
-      "videoS": 77.8,
-      "pieces": 36,
-      "score": 757,
-      "level": 2,
-      "lines": 2,
-      "clearEvents": 2,
-      "maxChain": 1,
-      "clearAt": [
-        38.1,
-        40
-      ],
-      "levelupAt": [
-        40
-      ]
-    },
-    {
-      "seed": 58,
-      "playS": 69.3,
-      "videoS": 79.8,
-      "pieces": 36,
-      "score": 695,
-      "level": 2,
-      "lines": 2,
-      "clearEvents": 2,
-      "maxChain": 1,
-      "clearAt": [
-        17.2,
-        50.4
-      ],
-      "levelupAt": [
-        50.4
-      ]
-    },
-    {
-      "seed": 63,
-      "playS": 74.3,
-      "videoS": 84.8,
-      "pieces": 40,
-      "score": 764,
-      "level": 2,
-      "lines": 2,
-      "clearEvents": 2,
-      "maxChain": 1,
-      "clearAt": [
-        25.7,
-        45.5
-      ],
-      "levelupAt": [
-        45.5
-      ]
-    },
-    {
-      "seed": 71,
-      "playS": 77.7,
-      "videoS": 88.2,
-      "pieces": 42,
-      "score": 801,
-      "level": 2,
-      "lines": 2,
-      "clearEvents": 2,
-      "maxChain": 1,
-      "clearAt": [
-        29.1,
-        48.8
-      ],
-      "levelupAt": [
-        48.8
-      ]
-    },
-    {
-      "seed": 82,
-      "playS": 65.7,
-      "videoS": 76.2,
-      "pieces": 35,
-      "score": 670,
-      "level": 2,
-      "lines": 2,
-      "clearEvents": 2,
-      "maxChain": 1,
-      "clearAt": [
-        20.9,
-        45.4
-      ],
-      "levelupAt": [
-        45.4
-      ]
-    },
-    {
-      "seed": 86,
-      "playS": 70.9,
-      "videoS": 81.4,
-      "pieces": 39,
-      "score": 781,
-      "level": 2,
-      "lines": 2,
-      "clearEvents": 2,
-      "maxChain": 1,
-      "clearAt": [
-        45.1,
-        48.6
-      ],
-      "levelupAt": [
-        48.6
-      ]
-    },
-    {
-      "seed": 98,
-      "playS": 66.4,
-      "videoS": 76.9,
-      "pieces": 37,
-      "score": 709,
-      "level": 2,
-      "lines": 2,
-      "clearEvents": 2,
-      "maxChain": 1,
-      "clearAt": [
-        35.7,
-        38.4
-      ],
-      "levelupAt": [
-        38.4
-      ]
-    },
-    {
-      "seed": 100,
-      "playS": 68.4,
-      "videoS": 78.9,
-      "pieces": 37,
-      "score": 726,
-      "level": 2,
-      "lines": 2,
-      "clearEvents": 2,
-      "maxChain": 1,
-      "clearAt": [
-        22.4,
-        48.8
-      ],
-      "levelupAt": [
-        48.8
-      ]
-    },
-    {
-      "seed": 131,
-      "playS": 66.9,
-      "videoS": 77.4,
-      "pieces": 36,
-      "score": 690,
-      "level": 2,
-      "lines": 2,
-      "clearEvents": 2,
-      "maxChain": 1,
-      "clearAt": [
-        22.7,
-        47.5
-      ],
-      "levelupAt": [
-        47.5
-      ]
-    }
-  ]
+ "generatedAt": "2026-09-30",
+ "criteria": "新特性向：等级≥3、炮台≥2次、共鸣≥1次、属性牌≥2张、半侧沉降>0、时长80~118s、一致性零误差、自然结束",
+ "botSeed": 777,
+ "finishAfterMs": 100000,
+ "primary": 144,
+ "seeds": [
+  {
+   "seed": 144,
+   "score": 2627,
+   "level": 3,
+   "lines": 4,
+   "videoS": 143.3,
+   "clearEvents": 4,
+   "maxChain": 1,
+   "turretEvents": 6,
+   "turretKills": 27,
+   "resoEvents": 2,
+   "resoCells": 18,
+   "cards": 2,
+   "build": [
+    "bullet_pierce",
+    "turret_bullets"
+   ],
+   "settledCells": 85,
+   "skillKills": 27,
+   "clearAt": [
+    26.2,
+    33.7,
+    52,
+    93.2
+   ],
+   "levelupAt": [
+    37.5,
+    80.5
+   ],
+   "turretAt": [
+    48.9,
+    58.9,
+    68.8,
+    80.5,
+    92.3,
+    93.2,
+    109.8
+   ],
+   "resoAt": [
+    68.8,
+    80.5
+   ]
+  },
+  {
+   "seed": 111,
+   "score": 2240,
+   "level": 3,
+   "lines": 3,
+   "videoS": 144.3,
+   "clearEvents": 3,
+   "maxChain": 1,
+   "turretEvents": 8,
+   "turretKills": 16,
+   "resoEvents": 2,
+   "resoCells": 17,
+   "cards": 2,
+   "build": [
+    "bullet_bounce",
+    "turret_bullets"
+   ],
+   "settledCells": 132,
+   "skillKills": 26,
+   "clearAt": [
+    31.2,
+    34.3,
+    88.6
+   ],
+   "levelupAt": [
+    40.1,
+    88.6
+   ],
+   "turretAt": [
+    43.6,
+    55.6,
+    58.6,
+    60.2,
+    79.6,
+    81.4,
+    88.6,
+    113.7
+   ],
+   "resoAt": [
+    60.2,
+    88.6
+   ]
+  },
+  {
+   "seed": 2,
+   "score": 2358,
+   "level": 3,
+   "lines": 3,
+   "videoS": 143.8,
+   "clearEvents": 3,
+   "maxChain": 1,
+   "turretEvents": 5,
+   "turretKills": 25,
+   "resoEvents": 2,
+   "resoCells": 18,
+   "cards": 2,
+   "build": [
+    "bullet_pierce",
+    "bullet_pierce"
+   ],
+   "settledCells": 57,
+   "skillKills": 25,
+   "clearAt": [
+    21.2,
+    29.3,
+    102.1
+   ],
+   "levelupAt": [
+    37.2,
+    85.6
+   ],
+   "turretAt": [
+    62,
+    65.6,
+    85.6,
+    97.2,
+    102.1
+   ],
+   "resoAt": [
+    65.6,
+    85.6
+   ]
+  },
+  {
+   "seed": 108,
+   "score": 2054,
+   "level": 3,
+   "lines": 3,
+   "videoS": 139.5,
+   "clearEvents": 3,
+   "maxChain": 1,
+   "turretEvents": 6,
+   "turretKills": 19,
+   "resoEvents": 2,
+   "resoCells": 12,
+   "cards": 2,
+   "build": [
+    "bullet_pierce",
+    "bullet_pierce"
+   ],
+   "settledCells": 95,
+   "skillKills": 21,
+   "clearAt": [
+    25.3,
+    40.5,
+    60.5
+   ],
+   "levelupAt": [
+    40.5,
+    85.8
+   ],
+   "turretAt": [
+    44.2,
+    46.4,
+    48.2,
+    52,
+    73.7,
+    85.8,
+    89.5,
+    108.6,
+    112.5
+   ],
+   "resoAt": [
+    60.5,
+    85.8
+   ]
+  },
+  {
+   "seed": 73,
+   "score": 2569,
+   "level": 3,
+   "lines": 4,
+   "videoS": 143.2,
+   "clearEvents": 3,
+   "maxChain": 2,
+   "turretEvents": 6,
+   "turretKills": 10,
+   "resoEvents": 1,
+   "resoCells": 14,
+   "cards": 2,
+   "build": [
+    "turret_bullets",
+    "bullet_pierce"
+   ],
+   "settledCells": 256,
+   "skillKills": 24,
+   "clearAt": [
+    37.9,
+    41,
+    97.7
+   ],
+   "levelupAt": [
+    41,
+    97.7
+   ],
+   "turretAt": [
+    52.2,
+    54.3,
+    59.5,
+    63.4,
+    94.6,
+    105,
+    116.2
+   ],
+   "resoAt": [
+    97.7
+   ]
+  },
+  {
+   "seed": 104,
+   "score": 2076,
+   "level": 3,
+   "lines": 3,
+   "videoS": 149.8,
+   "clearEvents": 3,
+   "maxChain": 1,
+   "turretEvents": 4,
+   "turretKills": 14,
+   "resoEvents": 2,
+   "resoCells": 16,
+   "cards": 2,
+   "build": [
+    "bullet_bounce",
+    "reso_col"
+   ],
+   "settledCells": 105,
+   "skillKills": 20,
+   "clearAt": [
+    27.3,
+    37,
+    63.2
+   ],
+   "levelupAt": [
+    38.9,
+    89.3
+   ],
+   "turretAt": [
+    46.8,
+    48.6,
+    83.9,
+    89.3,
+    109
+   ],
+   "resoAt": [
+    63.2,
+    89.3
+   ]
+  },
+  {
+   "seed": 54,
+   "score": 2082,
+   "level": 3,
+   "lines": 4,
+   "videoS": 147.4,
+   "clearEvents": 4,
+   "maxChain": 1,
+   "turretEvents": 3,
+   "turretKills": 14,
+   "resoEvents": 2,
+   "resoCells": 13,
+   "cards": 2,
+   "build": [
+    "turret_bullets",
+    "skill_chance"
+   ],
+   "settledCells": 161,
+   "skillKills": 17,
+   "clearAt": [
+    25.4,
+    40.7,
+    71.3,
+    88.1
+   ],
+   "levelupAt": [
+    42.6,
+    96.2
+   ],
+   "turretAt": [
+    46.4,
+    59.6,
+    96.2
+   ],
+   "resoAt": [
+    88.1,
+    96.2
+   ]
+  },
+  {
+   "seed": 15,
+   "score": 2190,
+   "level": 3,
+   "lines": 4,
+   "videoS": 143.6,
+   "clearEvents": 4,
+   "maxChain": 1,
+   "turretEvents": 4,
+   "turretKills": 15,
+   "resoEvents": 1,
+   "resoCells": 11,
+   "cards": 2,
+   "build": [
+    "skill_chance",
+    "turret_bullets"
+   ],
+   "settledCells": 155,
+   "skillKills": 15,
+   "clearAt": [
+    28.6,
+    41.3,
+    82.8,
+    99.8
+   ],
+   "levelupAt": [
+    41.3,
+    82.8
+   ],
+   "turretAt": [
+    71.8,
+    78.6,
+    94.9,
+    110,
+    116.6
+   ],
+   "resoAt": [
+    71.8
+   ]
+  }
+ ]
 }

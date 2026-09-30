@@ -3,8 +3,8 @@
  * → 页面内 MediaRecorder 录制（1080×1920 MP4 + BGM/音效/配音）→ POST 回传保存 videos/*.mp4
  *
  * 用法：
- *   node web-preview/record.cjs --seed 15 [--finish 60000] [--name gameplay-15]
- *                               [--nobgm] [--timeout 300000] [--keep]
+ *   node web-preview/record.cjs --seed 144 [--finish 110000] [--name gameplay-144]
+ *                               [--nobgm] [--cardhold 5200] [--timeout 300000] [--keep]
  * 依赖：Microsoft Edge（headless=new），Node 18+
  * 输出：stdout 最后一行为 JSON 摘要 {ok, file, ...}；退出码 0=成功
  */
@@ -31,6 +31,10 @@ const NAME = argVal('--name', 'gameplay-' + SEED + '-' + new Date().toISOString(
 const NOBGM = argv.includes('--nobgm');
 const KEEP = argv.includes('--keep');
 const TIMEOUT = parseInt(argVal('--timeout', '300000'), 10);
+const CARD_HOLD = parseInt(argVal('--cardhold', '6500'), 10); // 属性牌停留(ms)，够说完配音
+/* 跳过前面几关：直接从第 N 关开局（积分按「上一关合格分」累加口径接着算），
+ * 技能方块立刻登场，适合做新特性演示视频 */
+const START_LEVEL = parseInt(argVal('--startlevel', '1'), 10);
 
 /* ---------- 构建 bundle ---------- */
 function buildBundle() {
@@ -61,7 +65,16 @@ function startServer() {
         const parts0 = [];
         req.on('data', (c) => parts0.push(c));
         req.on('end', () => {
-          console.error('[hb] ' + Buffer.concat(parts0).toString('utf8'));
+          const line = Buffer.concat(parts0).toString('utf8');
+          console.error('[hb] ' + line);
+          /* 页面自己报了致命错误 → 立刻收摊，别白等几分钟录制预算 */
+          try {
+            const hb = JSON.parse(line);
+            if (hb.status === 'error') {
+              console.error('[record] page reported error: ' + hb.errors + ' → abort');
+              finish(4);
+            }
+          } catch (e) { /* 心跳格式变化忽略 */ }
           res.writeHead(204); res.end();
         });
         return;
@@ -95,6 +108,9 @@ function startServer() {
               level: q.get('level'),
               lines: q.get('lines'),
               pieces: q.get('pieces'),
+              skillKills: q.get('skillKills'),
+              cards: q.get('cards'),
+              build: q.get('build'),
             },
             errors: q.get('errors') || '',
           };
@@ -127,6 +143,8 @@ function launchEdge(port) {
     finish: String(FINISH),
     name: NAME,
     bgm: NOBGM ? '0' : '1',
+    cardhold: String(CARD_HOLD),
+    startlevel: String(START_LEVEL),
   });
   const url = 'http://127.0.0.1:' + port + '/record.html?' + qs.toString();
   const args = [
@@ -184,10 +202,16 @@ function finish(code) {
       if (exp && savedSummary.stats.score != null) {
         const got = parseInt(savedSummary.stats.score, 10);
         const bucketOk = Math.floor(got / 100) === Math.floor(exp.score / 100);
-        savedSummary.expected = { score: exp.score, level: exp.level, lines: exp.lines };
+        savedSummary.expected = {
+          score: exp.score, level: exp.level, lines: exp.lines,
+          skillKills: exp.skillKills, cards: exp.cards, build: exp.build,
+        };
         savedSummary.narrationOk = bucketOk && got >= exp.score - 99;
         savedSummary.levelMatch = parseInt(savedSummary.stats.level, 10) === exp.level;
         savedSummary.linesMatch = parseInt(savedSummary.stats.lines, 10) === exp.lines;
+        /* 新特性是否真的出镜了：技能击落格数 > 0 且属性牌张数不少于仿真预期 */
+        savedSummary.featuresOk = parseInt(savedSummary.stats.skillKills, 10) > 0 &&
+          parseInt(savedSummary.stats.cards, 10) >= (exp.cards || 0);
       }
     } catch (e) { /* seeds.json 缺失则跳过校验 */ }
   }

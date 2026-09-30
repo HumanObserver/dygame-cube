@@ -3,9 +3,16 @@
  *
  * 设计要点：
  * - 规划：枚举「旋转(含踢墙，与 gamecore.rotate 同 KICKS) × 垂直平移 × 沿重力落底」的全部
- *   可达落点；用游戏同款 Board（lock/clearLines/settle 链，与 gamecore._lock 一致）评估局面。
+ *   可达落点；评估直接借用游戏的 Board / Skills 模块（Node require，浏览器用 bundle 暴露的
+ *   window.__bundleRequire 拿到「游戏正在用的同一份实例」），在草稿棋盘上完整复刻
+ *   gamecore._lock 的结算顺序：锁定 → 技能格落位 → 炮台开火+共鸣级联 → 行列消除 →
+ *   共鸣 → 半侧沉降 → 连锁。因此 bot 不只是「会消行」，还**主动用技能**：
+ *   把炮台对准人堆打、把共鸣格塞进即将成形的整行/整列里引爆。
  * - 执行：全部动作在 hint 相位内按拟人节奏完成（节奏自适应 hintTimer，保证方块未自然下落，
  *   规划与执行严格一致）；进入 fall 相位后让方块可见地自然下落一小段，再 hardDrop。
+ * - 属性牌三选一：分数跨过 CARD.INTERVAL 时游戏暂停（core.pendingCards），bot 先让牌面
+ *   停留 cardHoldMs（视频里看得清、配音讲得完），再按固定偏好顺序选一张
+ *   （无随机 → 仿真与录制必然同结果）。
  * - 确定性：core.rng 由外部注入种子随机流；bot 自己的节奏抖动使用独立种子流（botRng），
  *   相同 (gameSeed, botSeed) 下整局可复现（仿真选种 → 录制回放同内容）。
  * - 弧线控制：survive 模式打好局（消行/升关）；到达 finishAfterMs 或 maxLevel 后切 finish
@@ -100,19 +107,172 @@
     return !gridCollides(grid, cols, rows, absCells(m, x0, y0));
   }
 
+  /* ===== 真实规则模块（Board / Skills / config）=====
+   * Node 仿真直接 require；浏览器录制页由 bundle.js 暴露的 window.__bundleRequire 取到
+   * 「游戏正在用的同一份实例」→ bot 的前瞻结算与真实规则零漂移（含技能与半侧沉降）。
+   * 取不到时退回内置近似（只算消除+半侧沉降，忽略技能）。 */
+  var REAL = null;
+  function realModules() {
+    if (REAL !== null) return REAL;
+    var Board = null, Skills = null, Cfg = null;
+    try {
+      if (typeof require === 'function') {
+        Board = require('../js/board.js');
+        Skills = require('../js/skills.js');
+        Cfg = require('../js/config.js');
+      }
+    } catch (e) { /* 走 bundle 或内置近似 */ }
+    var globalObj = typeof self !== 'undefined' ? self : (typeof window !== 'undefined' ? window : null);
+    if (!Board && globalObj && typeof globalObj.__bundleRequire === 'function') {
+      try {
+        Board = globalObj.__bundleRequire('js/board.js');
+        Skills = globalObj.__bundleRequire('js/skills.js');
+        Cfg = globalObj.__bundleRequire('js/config.js');
+      } catch (e) { /* 内置近似 */ }
+    }
+    REAL = (Board && Skills && Cfg) ? { Board: Board, Skills: Skills, Cfg: Cfg } : false;
+    return REAL;
+  }
+
+  /* 草稿棋盘：复用同一实例，避免每个候选落点都新建 20×20 网格造成 GC 抖动（录制掉帧） */
+  function makeScratch(board) {
+    var Mods = realModules();
+    if (!Mods) return null;
+    return new Mods.Board(board.cols, board.rows);
+  }
+
+  function resetScratch(dst, src) {
+    if (dst.cols !== src.cols || dst.rows !== src.rows) {
+      dst.cols = src.cols; dst.rows = src.rows; dst.reset();
+    }
+    for (var r = 0; r < src.rows; r++) {
+      for (var c = 0; c < src.cols; c++) {
+        dst.grid[r][c] = src.grid[r][c];
+        dst.skills[r][c] = src.skills[r][c]; // 技能对象只读，共享引用即可
+      }
+    }
+  }
+
+  /**
+   * 完整复刻 gamecore._lock 的结算顺序：
+   *   锁定 → 技能格落位 → 炮台开火(+共鸣级联) → 行列消除(+共鸣+半侧沉降) → 连锁
+   * @return {grid, clears, kills, shots, waves, detonated, wasted}
+   *   kills＝技能带走的格数　shots＝炮台弹道数　waves＝共鸣波及次数
+   *   detonated＝本块自带的共鸣格是否引爆　wasted＝带炮台却一发未中
+   */
+  function simulateLock(dst, srcBoard, piece, matrix, finalCells, mode) {
+    var cols = srcBoard.cols, rows = srcBoard.rows;
+    var Mods = realModules();
+    if (!Mods) { /* 兜底：内置近似（无技能） */
+      var g = cloneGrid(srcBoard.grid);
+      for (var i0 = 0; i0 < finalCells.length; i0++) {
+        var c0 = finalCells[i0];
+        if (c0.x >= 0 && c0.x < cols && c0.y >= 0 && c0.y < rows) g[c0.y][c0.x] = piece.type;
+      }
+      var f = clearFull(g, cols, rows), n = f.count, rl = f.rows, cl = f.cols;
+      while (n > 0) {
+        settleHalf(g, cols, rows, rl, cl);
+        var x0 = clearFull(g, cols, rows);
+        if (x0.count === 0) break;
+        n += x0.count; rl = rl.concat(x0.rows); cl = cl.concat(x0.cols);
+      }
+      return { grid: g, clears: n, kills: 0, shots: 0, waves: 0, detonated: false, wasted: false };
+    }
+
+    resetScratch(dst, srcBoard);
+    dst.lock(finalCells, piece.type);
+
+    var kills = 0, shots = 0, waves = 0, detonated = false, wasted = false;
+    var sk = piece.skill;
+    if (sk && sk.mods) {
+      var local = cellsOf(matrix);
+      for (var li = 0; li < local.length; li++) {
+        if (local[li].x !== sk.mx || local[li].y !== sk.my) continue;
+        var sx = finalCells[li].x, sy = finalCells[li].y;
+        dst.setSkill(sx, sy, { kind: sk.kind, dir: piece.dir, mods: sk.mods });
+        if (sk.kind === 'turret') {
+          /* 与 gamecore 一致：finish 模式真实也会开火（照成算，只是不计技能收益） */
+          var res = Mods.Skills.fireTurret(dst, sx, sy, piece.dir, sk.mods);
+          var seeds = [];
+          for (var si = 0; si < res.shots.length; si++) {
+            shots++;
+            for (var hi = 0; hi < res.shots[si].hits.length; hi++) seeds.push(res.shots[si].hits[hi]);
+          }
+          if (seeds.length) {
+            var casc = Mods.Skills.cascadeResonance(dst, seeds, 64);
+            kills += seeds.length + casc.destroyed.length;
+            waves += casc.waves.length;
+            detonated = detonated || casc.waves.length > 0;
+          } else {
+            wasted = shots > 0; // 空放：照样继续走消行链（否则预测会漏掉本可消除的行）
+          }
+        }
+        break;
+      }
+    }
+
+    /* 行列消除 → 共鸣 → 半侧沉降 → 连锁（与 gamecore._lock 逐行对应） */
+    var cleared = dst.clearLines();
+    var count = cleared.count;
+    if (count > 0) {
+      var rowsL = cleared.rows.slice(), colsL = cleared.cols.slice(), wave = cleared, guard = 0;
+      while (guard++ < 24) {
+        var seeds2 = [];
+        for (var ci = 0; ci < wave.cells.length; ci++) {
+          var cell = wave.cells[ci];
+          if (cell.skill && cell.skill.kind === 'resonance') seeds2.push(cell);
+        }
+        if (seeds2.length) {
+          if (sk && sk.kind === 'resonance') detonated = true;
+          var casc2 = Mods.Skills.cascadeResonance(dst, seeds2, 64);
+          kills += casc2.destroyed.length;
+          waves += casc2.waves.length;
+        }
+        dst.settle(rowsL, colsL);
+        var next = dst.clearLines();
+        if (next.count === 0) break;
+        count += next.count;
+        rowsL = rowsL.concat(next.rows);
+        colsL = colsL.concat(next.cols);
+        wave = next;
+      }
+    }
+    return { grid: dst.grid, clears: count, kills: kills, shots: shots, waves: waves, detonated: detonated, wasted: false };
+  }
+
+  /* ===== 属性牌三选一策略（无随机：仿真与录制必然同结果） =====
+   * 录视频的取向：先刷「灵能灌注」把技能密度拉起来 → 炮台多联/穿透（弹道好看）
+   * → 共鸣的消失方式（爆破/十字，一次带走一大片）→ 其余补齐。 */
+  var CARD_PREF = [
+    'skill_chance', 'turret_bullets', 'bullet_pierce',
+    'reso_bomb', 'reso_cross', 'bullet_bounce',
+    'reso_row', 'reso_col', 'reso_laser_h', 'reso_laser_v', 'bullet_power',
+  ];
+
+  /** 按偏好从牌面里挑一张，返回下标（偏好都没出现则取第一张） */
+  function chooseCardIndex(offer) {
+    if (!offer || !offer.length) return -1;
+    for (var i = 0; i < CARD_PREF.length; i++) {
+      for (var j = 0; j < offer.length; j++) if (offer[j].id === CARD_PREF[i]) return j;
+    }
+    return 0;
+  }
+
   /**
    * 枚举当前方块的全部可达落点（旋转→平移→落底），去重后评估，返回最优计划。
-   * @param board 游戏同款 Board 实例（用其 collides/lock/clearLines/settle 保证规则一致）
-   * @param piece {type, matrix, dir, x, y}（当前实时状态，hint 相位 = 出生位）
+   * @param board 游戏同款 Board 实例（用其 collides/lock/clearLines/settle/技能保证规则一致）
+   * @param piece {type, matrix, dir, x, y, skill}（当前实时状态，hint 相位 = 出生位）
    * @param nextType core.next.type
    * @param mode 'survive' | 'finish'
-   * @return {rotates, sign, moves, finalCells, clears, score}
+   * @param dst 复用的草稿 Board（可省，缺省内部新建）
+   * @return {rotates, sign, moves, finalCells, clears, kills, score}
    */
-  function planPlacement(board, piece, nextType, mode) {
+  function planPlacement(board, piece, nextType, mode, dst) {
     var cols = board.cols, rows = board.rows;
     var grid0 = board.grid;
     var d = DIRS[piece.dir];
     var p = PERP[piece.dir];
+    if (!dst) dst = makeScratch(board);
 
     /* --- 旋转态枚举（复刻 gamecore.rotate 的踢墙顺序；失败即停，与执行一致） --- */
     var rotStates = [{ matrix: piece.matrix, x: piece.x, y: piece.y, rotates: 0 }];
@@ -155,13 +315,15 @@
           var key = st.rotates + '|' + finalCells.map(function (c) { return c.x + ',' + c.y; }).join(';');
           if (!seen[key]) {
             seen[key] = true;
-            var ev = evalPlacement(grid0, cols, rows, finalCells, piece.type, piece.dir, nextType, mode);
+            var ev = evalPlacement(board, dst, piece, st.matrix, finalCells, nextType, mode);
             var cand = {
               rotates: st.rotates,
               sign: dt.sign,
               moves: moves,
               finalCells: finalCells,
               clears: ev.clears,
+              kills: ev.kills || 0,
+              waves: ev.waves || 0,
               score: ev.score,
             };
             /* 确定性择优：分数高者胜；平分时旋转少、平移少、先枚举方向(-1 优先于 +1) */
@@ -181,13 +343,13 @@
 
   /* ===== 评估权重（可外部调参；simulate.cjs 扫参用） ===== */
   var WEIGHTS = {
-    clear: 1200,        // 每消除 1 行/列
-    clearMulti: [0, 0, 600, 900, 1200], // 2/3/4 连消额外加分
+    clear: 2000,        // 每消除 1 行/列（主戏：分数＋大清洗，必须最重）
+    clearMulti: [0, 0, 900, 1400, 1900], // 2/3/4 连消额外加分
     wallDist: 5,        // 每格到重力墙距离罚分（贴墙平铺）
     adjacent: 2,        // 与已有格相邻
-    wallLine: 150,      // 贴墙线（第0/19行、第0/19列）完成进度 p²×此值
-    floorFunnel: 60,    // 底行进度引导：落在底行的格 × floorP × 此值
-    innerLine: 40,      // 内部行列 p³×此值
+    wallLine: 260,      // 贴墙线（第0/19行、第0/19列）完成进度 p²×此值
+    floorFunnel: 90,    // 底行进度引导：落在底行的格 × floorP × 此值
+    innerLine: 60,      // 内部行列 p³×此值
     center4: 140,       // 中心 4×4 出生区每格罚分
     center8: 16,        // 中心 8×8 外圈每格罚分
     deadHoleFloor: 90,  // 底行死洞（战略线，最重）
@@ -196,31 +358,24 @@
     newBlockCol: 170,   // R1：亲手堵死一个「干净的」底行缺口列（每列）
     deadBlockCol: 25,   // R1：往已死列继续堆（每列，引导集中）
     corridor: 22,       // R2：占用中央十字走廊的每格罚分
+    /* ---- 技能方块（新特性）：锦上添花的加分项，让 bot 别把炮口对着空气 ---- */
+    skillKill: 30,      // 技能每带走 1 格
+    skillWave: 55,      // 每次共鸣波及（连锁观感）
+    skillShot: 14,      // 每条弹道（多联炮管的价值）
+    resoDetonate: 150,  // 本块自带的共鸣格成功引爆（塞进整行整列的奖励）
+    wastedTurret: 80,   // 带炮台却空放
   };
 
-  /** 局面评估：复刻 gamecore._lock 的「锁定→消除→沉降→连锁」后打分 */
-  function evalPlacement(grid0, cols, rows, finalCells, type, pieceDir, nextType, mode) {
-    var grid = cloneGrid(grid0);
+  /** 局面评估：真实结算（锁定→技能→消除→共鸣→半侧沉降→连锁）后的盘面打分 */
+  function evalPlacement(board, dst, piece, matrix, finalCells, nextType, mode) {
+    var grid0 = board.grid;
+    var cols = board.cols, rows = board.rows;
+    var sim = simulateLock(dst, board, piece, matrix, finalCells, mode);
+    var grid = sim.grid;
     var i, c;
-    for (i = 0; i < finalCells.length; i++) {
-      c = finalCells[i];
-      if (c.x >= 0 && c.x < cols && c.y >= 0 && c.y < rows) grid[c.y][c.x] = type;
-    }
-    /* 消除 + 半侧沉降链（与 board.clearLines/settle 同规则；此处直接实现避免 Board 依赖差异） */
-    var first = clearFull(grid, cols, rows);
-    var count = first.count;
-    var rowLines = first.rows, colLines = first.cols;
-    while (count > 0) {
-      settleHalf(grid, cols, rows, rowLines, colLines);
-      var nx = clearFull(grid, cols, rows);
-      if (nx.count === 0) break;
-      count += nx.count;
-      rowLines = rowLines.concat(nx.rows);
-      colLines = colLines.concat(nx.cols);
-    }
-
     var score = 0;
     var x, y;
+    var count = sim.clears;
     if (mode === 'finish') {
       if (nextType && !canSpawn(grid, cols, rows, nextType)) score += 1e7; // 直接封死出生点 → 结束
       score -= count * 800; // 消行会延缓结束
@@ -229,14 +384,14 @@
         var dd = Math.max(Math.abs(c.x - (cols - 1) / 2), Math.abs(c.y - (rows - 1) / 2));
         score += Math.max(0, 7 - dd) * 90; // 越靠中心越好
       }
-      return { score: score, clears: count };
+      return { score: score, clears: count, kills: sim.kills };
     }
 
     /* ---- survive 模式 ----
      * 生存要诀（本游戏四向重力特性）：
      *  1) 贴自己的重力墙平铺（堆叠越平容量越大，中心保持空旷）
-     *  2) 凑满贴墙的行/列（第 0/19 行、第 0/19 列）：一旦消除，settle 沉降会
-     *     把所有悬空堆拽到地面并连锁消除多行 → 大量得分 + 棋盘大清洗
+     *  2) 凑满贴墙的行/列（第 0/19 行、第 0/19 列）：一旦消除，半侧沉降会拽着
+     *     贴近消除线的那一半贴合消除线，常常连锁消除多行 → 大量得分 + 棋盘大清洗
      *  3) 绝不堵中心出生区，保证下一块能出生
      */
     if (nextType && !canSpawn(grid, cols, rows, nextType)) score -= 1e6;
@@ -245,7 +400,14 @@
     if (count >= 2) score += W.clearMulti[Math.min(count, 4)];
     if (count >= 5) score += (count - 4) * 300;
 
-    var dir = pieceDir; // 当前方块重力方向（贴墙平铺罚分用）
+    /* 技能收益：炮台清场、共鸣连锁都是「分数 + 腾空间 + 观感」三赢 */
+    score += sim.kills * W.skillKill;
+    score += sim.waves * W.skillWave;
+    score += sim.shots * W.skillShot;
+    if (sim.detonated) score += W.resoDetonate;
+    if (sim.wasted) score -= W.wastedTurret;
+
+    var dir = piece.dir; // 当前方块重力方向（贴墙平铺罚分用）
     var wd = DIRS[dir];
 
     /* 底行进度（沉降方向 = 下，底行是全局战略线：3/4 的重力族都能喂它，
@@ -357,7 +519,7 @@
         else if (d <= 4) score -= W.center8;
       }
     }
-    return { score: score, clears: count };
+    return { score: score, clears: count, kills: sim.kills, waves: sim.waves, shots: sim.shots };
   }
 
   function clearFull(grid, cols, rows) {
@@ -480,10 +642,13 @@
    * @param opts {
    *   core,                       // GameCore 实例
    *   actRotate(), actMove(sign), actDrop(),   // 动作执行（浏览器走 onButton，仿真直调 core）
+   *   actChooseCard(view, index), // 属性牌选择（浏览器走 onButton('cardN')）；缺省则 core.pickCard
    *   botRng,                     // 节奏抖动随机流（独立于 core.rng）
    *   finishAfterMs = 52000,      // 开局后多久切 finish 模式
    *   maxLevel = 99,              // 达到该关卡立即切 finish
-   *   hooks: { onPiece, onPlan, onAct, onDrop, onClear, onLevelUp, onGameOver, onMode }
+   *   cardHoldMs = 2200,          // 属性牌牌面停留时间（视频要看得清、配音讲得完）
+   *   hooks: { onPiece, onPlan, onAct, onDrop, onClear, onLevelUp, onGameOver, onMode,
+   *            onCardOffer, onCardPick }
    * }
    */
   function createBot(opts) {
@@ -492,6 +657,7 @@
     var hooks = opts.hooks || {};
     var finishAfterMs = opts.finishAfterMs === undefined ? 52000 : opts.finishAfterMs;
     var maxLevel = opts.maxLevel === undefined ? 99 : opts.maxLevel;
+    var cardHoldMs = opts.cardHoldMs === undefined ? 2200 : opts.cardHoldMs;
 
     var bot = {
       mode: 'survive',
@@ -504,8 +670,12 @@
       actInterval: 60,
       fallStart: 0,
       dropDelay: 800,
-      stats: { pieces: 0, plannedClears: 0, mismatches: 0 },
+      cardSeenAt: 0,        // 本次属性牌出现的时刻（停留计时）
+      pausedMs: 0,          // 属性牌暂停累计时长（不计入对局时长，切换点才与停留时长无关）
+      stats: { pieces: 0, plannedClears: 0, plannedKills: 0, mismatches: 0, cards: 0, turretPieces: 0, resoPieces: 0 },
     };
+
+    var dst = makeScratch(core.board); // 前瞻评估复用的草稿棋盘
 
     var prevLines = 0, prevLevel = 1;
 
@@ -518,13 +688,21 @@
     function beginPiece(now) {
       bot.pieceRef = core.current;
       bot.stats.pieces++;
-      var newMode = ((now - bot.playStart) >= finishAfterMs || core.level >= maxLevel) ? 'finish' : 'survive';
+      var newMode = ((now - bot.playStart - bot.pausedMs) >= finishAfterMs || core.level >= maxLevel) ? 'finish' : 'survive';
       if (newMode !== bot.mode) {
         bot.mode = newMode;
         if (hooks.onMode) hooks.onMode(bot.mode);
       }
       var nextType = core.next ? core.next.type : null;
-      bot.plan = planPlacement(core.board, core.current, nextType, bot.mode);
+      bot.plan = planPlacement(core.board, core.current, nextType, bot.mode, dst);
+      if (bot.plan) {
+        if (bot.plan.clears) bot.stats.plannedClears++;
+        bot.stats.plannedKills += bot.plan.kills || 0;
+      }
+      if (core.current && core.current.skill) {
+        if (core.current.skill.kind === 'turret') bot.stats.turretPieces++;
+        else bot.stats.resoPieces++;
+      }
       if (!bot.plan) { bot.phase = 'fall'; return; } // 无处可动（理论上不会）→ 等自然锁定
       if (hooks.onPlan) hooks.onPlan(bot.plan, core.current);
       /* 动作队列：旋转 → 平移 */
@@ -557,6 +735,29 @@
         if (hooks.onGameOver) hooks.onGameOver(core);
         return;
       }
+
+      /* 属性牌三选一：core.pendingCards 一出现整局即暂停（update / canControl 都被挡住）。
+       * 先让牌面停留 cardHoldMs（视频里要看得清、配音要讲得完），再按固定偏好选一张恢复对局。 */
+      if (core.pendingCards && core.pendingCards.length) {
+        if (!bot.cardSeenAt) {
+          bot.cardSeenAt = now;
+          bot.stats.cards++;
+          if (hooks.onCardOffer) hooks.onCardOffer(core.pendingCards);
+        }
+        bot.lastPhase = core.phase; // 暂停期间不产生「新方块」跳变误判
+        if (now - bot.cardSeenAt >= cardHoldMs) {
+          var ci = chooseCardIndex(core.pendingCards);
+          if (ci < 0) ci = 0;
+          var view = core.pendingCards[ci];
+          bot.pausedMs += (now - bot.cardSeenAt); // 暂停时长不计入对局时长
+          bot.cardSeenAt = 0;
+          if (opts.actChooseCard) opts.actChooseCard(view, ci);
+          else core.pickCard(view.id);
+          if (hooks.onCardPick) hooks.onCardPick(view, ci, core.pendingCards);
+        }
+        return;
+      }
+      bot.cardSeenAt = 0;
 
       /* 新方块检测：spawn 是进入 'hint' 相位的唯一入口。
        * 注意 movePerp/rotate/_stepGravity 都会替换 current 对象引用，
@@ -624,7 +825,7 @@
   /* ===== 浏览器接入 ===== */
 
   /**
-   * @param o { game: window.__game, gameSeed, botSeed, finishAfterMs, maxLevel, hooks, skipRng }
+   * @param o { game: window.__game, gameSeed, botSeed, finishAfterMs, maxLevel, hooks, skipRng, cardHoldMs }
    *   skipRng=true：调用方已自行注入 core.rng（录制页需在 start 前注入以对齐仿真序列）
    */
   function attach(o) {
@@ -636,13 +837,17 @@
       botRng: mulberry32((o.botSeed === undefined ? 777 : o.botSeed) >>> 0),
       finishAfterMs: o.finishAfterMs,
       maxLevel: o.maxLevel,
+      cardHoldMs: o.cardHoldMs,
       hooks: o.hooks,
       actRotate: function () { G.onButton('rotate'); },
       actMove: function (sign) { G.onButton(sign < 0 ? 'left' : 'right'); },
       actDrop: function () { G.onButton('drop'); },
+      /* 属性牌走真实按钮（含选牌音效/命中区域一致性） */
+      actChooseCard: function (view, index) { G.onButton('card' + index); },
     });
     var timer = setInterval(function () {
-      if (G.state === 'playing') bot.tick(Date.now());
+      /* 'cards'（属性牌待选）也必须驱动：选牌之前整局是暂停的 */
+      if (G.state === 'playing' || G.state === 'cards') bot.tick(Date.now());
       else if (bot.phase !== 'over' && G.state === 'gameover') bot.tick(Date.now());
     }, 16);
     bot.stop = function () { clearInterval(timer); };
@@ -653,6 +858,10 @@
     createBot: createBot,
     attach: attach,
     planPlacement: planPlacement,
+    simulateLock: simulateLock,
+    realModules: realModules,
+    chooseCardIndex: chooseCardIndex,
+    CARD_PREF: CARD_PREF,
     canSpawn: canSpawn,
     mulberry32: mulberry32,
     ghostDistance: ghostDistance,
