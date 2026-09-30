@@ -516,6 +516,45 @@ test('skills：子弹穿透层数、撞墙反弹与空弹道消散', () => {
   assert.strictEqual(fan.shots.reduce((n, s) => n + s.hits.length, 0), 3, '三条弹道各击落一格');
 });
 
+test('skills：子弹穿过己方格（ignore），不击落也不消耗穿透', () => {
+  const b = new Board(10, 10);
+  b.lock([{ x: 5, y: 8 }], 'O'); // 自己方块的兄弟格（在弹道上）
+  b.lock([{ x: 5, y: 3 }], 'J'); // 真正要击落的目标
+  const r = Skills.travelBullet(b, 5, 9, 2, Skills.defaultMods(), [{ x: 5, y: 8 }]);
+  assert.strictEqual(b.grid[8][5], 'O', '己方格不被击落');
+  assert.strictEqual(b.grid[3][5], null, '穿过己方格后击落更远处的方格');
+  assert.strictEqual(r.hits.length, 1, '穿透 0 也只算命中 1 格（己方格不计）');
+  assert.ok(r.path.some((p) => p.x === 5 && p.y === 8), '弹道仍然经过己方格（视觉上是穿过去）');
+});
+
+test('skills：cascadeSkills 让被带走的格子各自释放技能（分步返回）', () => {
+  const b = new Board(10, 10);
+  b.lock([{ x: 2, y: 2 }], 'Z');
+  b.setSkill(2, 2, { kind: 'resonance', dir: 0, mods: Skills.defaultMods() });
+  b.lock([{ x: 6, y: 6 }], 'Z'); // 同类 → 被共鸣带走，而它自己是炮台
+  b.setSkill(6, 6, { kind: 'turret', dir: 0, mods: Skills.defaultMods() });
+  b.lock([{ x: 6, y: 1 }], 'J'); // 炮台补射的目标
+  const r = Skills.cascadeSkills(b, [b.remove(2, 2)]);
+  assert.strictEqual(r.steps.length, 2, '共鸣一步 + 炮台补射一步');
+  assert.strictEqual(r.steps[0].kind, 'resonance');
+  assert.strictEqual(r.steps[1].kind, 'turret');
+  assert.strictEqual(b.grid[1][6], null, '被带走的炮台补射击落目标');
+  assert.strictEqual(r.destroyed.length, 2, '两步各自消失的格子合计 2');
+  assert.strictEqual(r.steps[0].cells.length, 1);
+  assert.strictEqual(r.steps[1].cells.length, 1);
+
+  // 兼容接口：只结算共鸣，炮台不补射
+  const b2 = new Board(10, 10);
+  b2.lock([{ x: 2, y: 2 }], 'Z');
+  b2.setSkill(2, 2, { kind: 'resonance', dir: 0, mods: Skills.defaultMods() });
+  b2.lock([{ x: 6, y: 6 }], 'Z');
+  b2.setSkill(6, 6, { kind: 'turret', dir: 0, mods: Skills.defaultMods() });
+  b2.lock([{ x: 6, y: 1 }], 'J');
+  const r2 = Skills.cascadeResonance(b2, [b2.remove(2, 2)]);
+  assert.strictEqual(r2.waves.length, 1);
+  assert.strictEqual(b2.grid[1][6], 'J', 'turretKnockout=false：炮台被带走时不开火');
+});
+
 test('skills：共鸣格消失时带走同类方格，异类保留', () => {
   const b = new Board(10, 10);
   b.lock([{ x: 1, y: 1 }], 'Z');
@@ -617,6 +656,45 @@ test('core：共鸣格被炮台击落时也会释放（消除技能＝被消除�
   assert.strictEqual(core.skillKills, 2);
   const evs = core.drainEvents();
   assert.ok(evs.some((e) => e.type === 'resonance'), '应推入 resonance 事件');
+});
+
+test('core：子弹穿过自己方块的其余格，击落更远处的方格（不打到自己人）', () => {
+  const core = new GameCore({ rng: constRng(0.1) });
+  core.phase = 'fall';
+  core.board.lock([{ x: 8, y: 10 }], 'J'); // 弹道更远处的目标
+  core.current = {
+    type: 'O', matrix: SHAPES.O, dir: 0, x: 8, y: 18,
+    skill: { kind: 'turret', mx: 0, my: 1, mods: Skills.defaultMods() }, // 技能格在 (8,19)，向上开火先遇到 (8,18)
+  };
+  core.hardDrop();
+  assert.strictEqual(core.board.grid[18][8], 'O', '自己方块的同列格不被击落');
+  assert.strictEqual(core.board.grid[19][8], 'O', '技能格本身留在场上');
+  assert.strictEqual(core.board.grid[10][8], null, '穿过自己方块后击落远处目标');
+  assert.strictEqual(core.skillKills, 1, '只击落了 1 格（己方格不计）');
+  const ev = core.drainEvents().filter((e) => e.type === 'turret')[0];
+  assert.ok(ev.shots[0].path.some((p) => p.x === 8 && p.y === 18), '弹道经过己方格（穿过去）');
+});
+
+test('core：被共鸣带走的炮台格补射一发（被技能消除的格子各自带技能特效）', () => {
+  const core = new GameCore({ rng: constRng(0.1) });
+  core.phase = 'fall';
+  const row = [];
+  for (let c = 0; c < 18; c++) row.push({ x: c, y: 19 });
+  core.board.lock(row, 'Q');
+  core.board.setSkill(3, 19, { kind: 'resonance', dir: 0, mods: Skills.defaultMods() });
+  core.board.lock([{ x: 3, y: 5 }], 'Q'); // 同类悬空格，它自己是炮台
+  core.board.setSkill(3, 5, { kind: 'turret', dir: 0, mods: Skills.defaultMods(), own: [{ x: 3, y: 5 }] });
+  core.board.lock([{ x: 3, y: 1 }], 'J'); // 炮台补射的目标
+  core.current = { type: 'O', matrix: SHAPES.O, dir: 0, x: 18, y: 17 };
+  core.hardDrop();
+  assert.strictEqual(core.board.grid[5][3], null, '共鸣带走同类炮台格');
+  assert.strictEqual(core.board.grid[1][3], null, '被带走的炮台就地补射，击落弹道上的方格');
+  assert.ok(core.skillKills >= 2, '共鸣与补射的击落都计入：' + core.skillKills);
+  const evs = core.drainEvents();
+  const tur = evs.filter((e) => e.type === 'turret');
+  assert.strictEqual(tur.length, 1, '补射单独出一次炮台事件（各自的特效）');
+  assert.strictEqual(tur[0].knock, true, '事件标记为补射');
+  assert.ok(evs.some((e) => e.type === 'resonance'), '共鸣波事件仍在');
 });
 
 /* ================= 属性牌三选一（需求 4） ================= */

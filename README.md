@@ -11,8 +11,10 @@
 - **半侧沉降**：消除后**只有贴近消除线的那一半**方块朝着消除线滑动贴合，另一半保持原位（消行→上半下沉、下半不动；消列→近侧那半横向滑动）；滑动的这一半若凑齐新的整行/整列将连锁消除，一并计数计分
 - **过关清场**：每关设有「合格分」（第 1 关 500 分、第 2 关 1500 分、第 3 关 3000 分……逐关递增），本局累计分数达到合格分即过关——**棋盘整体清空、从下一关重新开局，但积分不清零、继续累加**；升关后下落更快、提示时间更短；HUD 顶部显示当前关合格分与进度条
 - **技能方块**（第 2 关起按概率出现，棋盘中随机一格带技能，两种类别）：
-  - **炮台**（落地技能，金色徽章）：落位瞬间沿**反重力方向**发射能量弹，击落弹道上的方格；被击落的方格**原地消失、不引发沉降**（原方格保持），每格按构筑计分
+  - **炮台**（落地技能，金色徽章）：落位瞬间沿**反重力方向**发射能量弹，击落弹道上的方格；子弹会**穿过自己方块的其余格**（不打自己人，也不消耗穿透），只击落别人的方格；被击落的方格**原地消失、不引发沉降**（原方格保持），每格按构筑计分
   - **共鸣**（消除技能，青色徽章）：当它**被消除或被能量弹击落**时释放，把与它「同类」的方格一起带走（默认同颜色/同类型），并沿被带走的共鸣格继续级联引爆
+  - **连锁各放各的技能**：被技能带走的方格若自己也是技能格，会当场释放**它本人的**技能（共鸣继续波及、炮台就地补射），每步单独计分、单独出特效（结算与事件按步拆分，`knock` 标记补射）
+- **命中表现**：子弹命中 = 白热闪光 + 双层冲击波 + 8 道放射火花 + 四角碎块外飞 + 弹道十字/斜向火花，并伴随**棋盘震屏**（幅度按击落格数递增，0.26~0.3s 内衰减）与震动反馈；共鸣消失同理带青色爆点
 - **属性牌三选一**（本局永久生效的构筑）：累计分数每跨过 `CARD.INTERVAL`（默认 1000 分）弹出三张属性牌，选一张后**后续遇到的技能方块都会带上这份属性**
   - 炮台系：子弹数（双联/三联/四联炮管）、穿透层数、撞墙反弹次数、单格加分
   - 共鸣系：同类判定维度扩展（同色 / 同层=同一行 / 同列=同一列，可叠加）+ 消失方式（爆炸周围 8 格 / 横向激光左右各 2 格 / 竖向激光上下各 2 格 / 十字激光四向各 2 格）
@@ -66,7 +68,7 @@ game/
 node --test test/core.test.cjs
 ```
 
-覆盖：旋转与踢墙、行列消除、消除后整体下沉（沉降/连锁消除）、7-bag 随机、四向重力锁定、计分、关卡合格分升关（含连升多关）、速度下限、游戏结束判定、复活（revive）等 32 个用例。
+覆盖：旋转与踢墙、行列消除、**半侧沉降**（消行/消列的近侧压实 + 连锁）、四向重力锁定、计分、**过关清场（升关不清分、多关连升、全清无残留）**、速度下限、游戏结束判定、复活（revive）、**技能格（炮台落地开火 / 穿过己方方块 / 穿透·反弹·多管·激光 / 共鸣同类引爆 / 被带走的格子各自释放技能＝补射）**、**属性牌（发牌、选择、跳过、构筑生效、技能格携带 mods）** 等 55 个用例。
 
 集成冒烟测试（在 Node 中以模拟 tt 环境 + Canvas 打桩运行整个游戏：场景切换、按钮/手势输入、完整一局打到游戏结束、分享、侧边栏复访领奖/跳转、添加到桌面、订阅消息、激励视频得金币、广告复活、插屏节流、开放数据域渲染）：
 
@@ -110,6 +112,63 @@ node web-preview/serve.cjs   # 先保持服务运行
 ![升级](web-preview/shots/5-levelup.png)
 ![游戏结束](web-preview/shots/6-gameover.png)
 ![排行榜](web-preview/shots/7-rank.png)
+
+## 演示视频自动录制（自动游玩 + 配音 + 无头录制）
+
+一条命令产出一条 1080×1920 竖屏对局视频：浏览器预览页由自动玩家 bot 实时操作，配音按事件触发，画面与解说都是玩家视角、无任何「自动/AI」标识。
+
+| 环节 | 脚本 | 说明 |
+| --- | --- | --- |
+| 离线选种 | `web-preview/simulate.cjs` | Node 中跑完整对局，按「新特性是否出镜 + 成片时长」打分排序；`--write-seeds` 写出 `web-preview/seeds.json` |
+| 自动玩家 | `web-preview/autoplayer.js` | UMD，浏览器与 Node 共用。规划时借用游戏自身的 `js/board.js` / `js/skills.js`（浏览器侧经 `window.__bundleRequire` 取到**同一份模块实例**），在草稿盘上复刻 `gamecore._lock` 的结算顺序：锁定 → 技能格落位 → 炮台开火 + 共鸣级联 → 行列消除 → 共鸣 → 半侧沉降 → 连锁。所以 bot 不只是会消行，还**主动用技能**：炮台瞄准人堆打、把共鸣格塞进即将成形的整行/整列里引爆 |
+| 属性牌决策 | 同上 `chooseCardIndex` | 三选一按固定偏好顺序（炮台流优先），无随机 → 仿真选出的种子在录制页必然复现同一局 |
+| 配音台词 | `tools/gen-narration.cjs` | Edge TTS（`zh-CN-YunxiNeural`）合成 `web-preview/media/narration/*.mp3` + `clips.json`；`--missing` 只重生成文案变过的条目；websocket 偶发失败自动退避重试 |
+| 录制 | `web-preview/record.cjs` + `web-preview/recorder.js` | 无头 Edge（`--window-size=540,960 --force-device-scale-factor=2`）打开 `record.html`，页面内 `MediaRecorder` 录 H.264/AAC，结束后 `POST /__recording` 落盘 `web-preview/videos/<name>.mp4` 并修补 fMP4 时长 |
+| 每日一条 | `tools/daily-record.cjs` | 按日期从 `seeds.json` 轮转取种子录制，命名 `gravity-cube-<yyyymmdd>.mp4` |
+| 抽帧校验 | `web-preview/verify.cjs` | 按时间点抽帧，确认分辨率与关键画面（技能徽章、弹道、属性牌面板） |
+
+### 导演层：新特性怎么被「讲」出来
+
+`recorder.js` 不改游戏源码，只**包一层 `main.processEvents`**，在它排空 `core.events` 之前先读一遍事件队列，再按事件配音效与解说：
+
+| 事件 | 表现 |
+| --- | --- |
+| `turret` | 开火「咻」+ 命中闷响；击落 >0 解说「炮台开火！」，≥6 格换成「这一发直接带走一整排」，11s 节流 |
+| `resonance` | 上滑音 + 引爆低频；解说「共鸣引爆！」 |
+| `clear`（`settled>0`，仅首次） | 解说「半侧沉降」：只有贴近消除线那一半滑动压实 |
+| `levelup`（`skills=true`，仅首次） | 解说技能方块登场：金色炮台 / 青色共鸣 |
+| `cards` / `cardpick`（bot 钩子 `onCardOffer` / `onCardPick`） | 解说「属性牌三选一」，选完再按牌系补一句（炮台 / 共鸣 / 通用）；对局在此暂停，`--cardhold`（默认 6500ms）保证牌面看得清、台词讲得完 |
+
+排队台词带 6s 有效期（`ttl`），过期直接丢弃——新特性解说讲究此时此刻，宁可不说也不迟说；结算台词例外（`ttl: 20000`），保证战绩一定播得出来。
+
+### 常用命令
+
+```powershell
+# 1) 离线选种（要求炮台/共鸣/属性牌/沉降全部出镜，并写入 seeds.json）
+node web-preview/simulate.cjs --search 1..240 --finish 100000 --min-turret 3 --min-reso 1 --min-cards 2 --write-seeds
+
+# 2) 生成配音（基础台词 + 种子池战绩台词；--missing 跳过未改文案，--prune 清掉换池后失效的战绩）
+node tools/gen-narration.cjs --base --seed all --missing --prune
+
+# 3) 录制（约 2.5 分钟，按真实时间录制）
+node web-preview/record.cjs --seed 144 --finish 100000 --name gravity-cube-20261001
+
+# 3b) 跳过前面几关（演示新特性时用，直接从第 N 关开局，积分接着上一关合格分累计）
+node web-preview/record.cjs --seed 35 --startlevel 3 --finish 45000 --name demo-skills
+#   ↑ 注意：level 越高技能格越密，炮台把刚堆好的一行打缺，消行数会明显下降
+#     （实测 startlevel=3 三局 lines=0）。要「消行+沉降+技能+属性牌」同框，
+#     优先用第 1 步选出的种子从第 1 关自然打到第 3 关。
+
+# 4) 抽帧校验（fMP4 没有随机索引，用顺序播放采样而非 seek）
+node web-preview/verify.cjs --file videos/gravity-cube-20261001.mp4 --times 43,74,77,106 --mode play --rate 8
+```
+
+最新成片：[web-preview/videos/gravity-cube-20261001.mp4](web-preview/videos/gravity-cube-20261001.mp4)
+（1080×1920 / 2 分 38 秒 / 15.7 MB。实录战绩：2605 分、第 3 关、消 4 行、55 块；过关清场 2 次、炮台开火 6 次击落 27 格、共鸣引爆 2 次带走 18 格、半侧沉降 85 格、属性牌三选一 2 次（穿甲弹头 → 双联炮管，第 109 秒的双发弹幕就是它生效的样子），结尾播报的就是这几个真实数字。）
+
+> **一致性保证**：`(gameSeed, botSeed, finishAfterMs)` 相同 ⇒ 离线仿真与浏览器录制逐位一致（属性牌暂停时长不计入对局时长，改 `--cardhold` 不会改局面）。
+> `record.cjs` 结束时把实录的分数 / 关卡 / 消行数与 `seeds.json` 比对，输出 `narrationOk` / `levelMatch` / `linesMatch` / `featuresOk`；
+> 出现 false 说明规则或 bot 权重改过，需要重跑第 1、2 步再录，否则结尾配音的战绩数字会对不上画面。
 
 ## 在抖音开发者工具中运行
 
@@ -170,6 +229,23 @@ node web-preview/serve.cjs   # 先保持服务运行
 | `REVIVE_COIN_COST` | 30 | 金币复活消耗 |
 | `AD_REWARD_COINS` | 50 | 看一次激励视频奖励 |
 | `SIDEBAR_REWARD_COINS` | 60 | 每日侧边栏复访奖励 |
+
+## 版本记录
+
+### v1.3.1 — 技能手感与特效（本轮）
+
+| 变更 | 代码位置 |
+|---|---|
+| **子弹不再打到自己人**：炮台格锁定时记下本块的全部格（`skill.own`），弹道经过这些格既不命中也不消耗穿透，直接穿过去打后面的方格 | `js/skills.js`（`ownSet`/`normIgnore`/`travelBullet`/`fireTurret`）、`js/gamecore.js`（`_lock`/`_fireTurret`） |
+| **命中特效加强**：白热核心闪光 + 双层冲击波 + 8 道放射火花 + 四角碎块外飞，弹道命中点加粗十字/斜向火花，子弹尾迹 260→380ms；命中按击落格数触发棋盘**震屏**（0.26~0.3s 衰减）+ 震动反馈 | `js/render.js`（`drawImpactFx`/`drawTurretFx`/`bulletDuration`）、`js/main.js`（`_shake`/`updateFx`/`processEvents`） |
+| **被技能消除的方格各自放出自己的技能**：共鸣波及到炮台格 → 就地补射一发；被能量弹击落的共鸣格 → 继续引爆；每一「步」独立成为事件、独立计分、独立出特效（`knock` 标记补射，漂浮字写「补射」） | `js/skills.js`（`cascadeSkills`）、`js/gamecore.js`（`_pushSkillStep`/`_resonance`/`_fireTurret`） |
+| 录制可**跳过前面几关**：`node web-preview/record.cjs --seed 35 --startlevel 3`；测试 55/55，冒烟新增「穿过己方格 / 爆点 / 震屏 / 补射」断言 | `web-preview/record.cjs`、`web-preview/recorder.js`、`web-preview/smoke.cjs`、`test/core.test.cjs` |
+
+> 兼容：旧接口 `Skills.cascadeResonance(board, seeds, limit)` 仍在（只做共鸣引爆、不触发炮台补射），供仿真与外部脚本调用。
+
+### v1.3.0 — 玩法升级
+
+- 半侧沉降（`SETTLE`）、过关清场且积分累加、炮台/共鸣技能格（`SKILL`）、属性牌三选一构筑（`CARD` + `CARD_POOL`）
 
 ## 技术说明
 

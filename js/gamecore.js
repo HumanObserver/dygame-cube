@@ -344,34 +344,51 @@ class GameCore {
     return s;
   }
 
-  /** 炮台落地开火：击落方格（其余方格保持原位，不引发沉降），并级联引爆被击落的共鸣格 */
-  _fireTurret(shot) {
-    const res = Skills.fireTurret(this.board, shot.x, shot.y, shot.dir, shot.mods);
-    let hits = 0;
-    const seeds = [];
-    for (let i = 0; i < res.shots.length; i++) {
-      for (let j = 0; j < res.shots[i].hits.length; j++) { seeds.push(res.shots[i].hits[j]); hits++; }
-    }
-    const casc = Skills.cascadeResonance(this.board, seeds);
-    const cells = seeds.concat(casc.destroyed);
-    const score = this._skillScore(cells.length);
-    this.events.push({
-      type: 'turret', origin: res.origin, dir: shot.dir, shots: res.shots,
-      cells: cells, count: cells.length, hits, score,
-    });
-    if (casc.waves.length) {
-      this.events.push({ type: 'resonance', waves: casc.waves, cells: casc.destroyed, count: casc.destroyed.length, score: 0 });
+  /**
+   * 把一个技能结算步骤转成事件：每步各自计分、各自出特效。
+   *  - turret 步 → 'turret' 事件（弹道 + 命中爆点）
+   *  - resonance 步 → 'resonance' 事件（共鸣波 + 同类格闪光）
+   */
+  _pushSkillStep(st) {
+    const score = st.cells.length ? this._skillScore(st.cells.length) : 0;
+    if (st.kind === 'turret') {
+      this.events.push({
+        type: 'turret', origin: st.origin, dir: st.dir, shots: st.shots,
+        cells: st.cells, count: st.cells.length, hits: st.cells.length, score,
+        knock: !!st.knock, // true = 被带走时的补射（渲染可略作区分）
+      });
+    } else {
+      this.events.push({
+        type: 'resonance',
+        waves: [{ origin: st.origin, kind: 'resonance', pattern: st.pattern, scope: st.scope, cells: st.cells }],
+        cells: st.cells, count: st.cells.length, score,
+      });
     }
     return score;
   }
 
-  /** 共鸣（消除技能）：被消除/被击落的共鸣格 → 同类方格一同消失（可级联） */
+  /**
+   * 炮台落地开火：击落弹道上的方格（其余方格保持原位，不引发沉降）。
+   * 子弹穿过自己方块的其余格；被击落的每个格子都会释放**它自己的**技能特效（可继续级联）。
+   */
+  _fireTurret(shot) {
+    const res = Skills.fireTurret(this.board, shot.x, shot.y, shot.dir, shot.mods, shot.ignore);
+    const seeds = [];
+    for (let i = 0; i < res.shots.length; i++) {
+      for (let j = 0; j < res.shots[i].hits.length; j++) seeds.push(res.shots[i].hits[j]);
+    }
+    let total = this._pushSkillStep({ kind: 'turret', origin: res.origin, dir: res.dir, shots: res.shots, cells: seeds });
+    const casc = Skills.cascadeSkills(this.board, seeds);
+    for (let i = 0; i < casc.steps.length; i++) total += this._pushSkillStep(casc.steps[i]);
+    return total;
+  }
+
+  /** 消除技能结算：被消除/被击落的技能格各自释放特效（共鸣波及同类、炮台补射），可级联 */
   _resonance(seeds) {
-    const casc = Skills.cascadeResonance(this.board, seeds);
-    if (!casc.waves.length) return 0;
-    const score = this._skillScore(casc.destroyed.length);
-    this.events.push({ type: 'resonance', waves: casc.waves, cells: casc.destroyed, count: casc.destroyed.length, score });
-    return score;
+    const casc = Skills.cascadeSkills(this.board, seeds);
+    let total = 0;
+    for (let i = 0; i < casc.steps.length; i++) total += this._pushSkillStep(casc.steps[i]);
+    return total;
   }
 
   _lock() {
@@ -385,10 +402,11 @@ class GameCore {
       const local = cellsOf(piece.matrix);
       for (let i = 0; i < local.length; i++) {
         if (local[i].x === piece.skill.mx && local[i].y === piece.skill.my) {
-          const skill = { kind: piece.skill.kind, dir: piece.dir, mods: piece.skill.mods };
+          // own：本方块其余格（子弹要穿过它们，不能打到自己人）
+          const skill = { kind: piece.skill.kind, dir: piece.dir, mods: piece.skill.mods, own: cells.slice() };
           this.board.setSkill(cells[i].x, cells[i].y, skill);
           if (piece.skill.kind === 'turret') {
-            landTurret = { x: cells[i].x, y: cells[i].y, dir: piece.dir, mods: piece.skill.mods };
+            landTurret = { x: cells[i].x, y: cells[i].y, dir: piece.dir, mods: piece.skill.mods, ignore: skill.own };
           }
           break;
         }

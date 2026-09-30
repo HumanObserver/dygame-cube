@@ -462,6 +462,16 @@ function drawBoard(ctx, L, main, t) {
   const s = L.s, B = L.board, core = main.core;
   const cell = B.cell;
 
+  // 命中震屏：整块棋盘（含特效）轻微抖动，强化打击感
+  const sh = main.shake;
+  const shaking = !!(sh && sh.t < sh.dur);
+  if (shaking) {
+    const k = 1 - sh.t / sh.dur;
+    const amp = (sh.amp || 3) * k * s;
+    ctx.save();
+    ctx.translate(Math.sin(sh.t * 0.09) * amp, Math.cos(sh.t * 0.13) * amp);
+  }
+
   // 底板
   roundRect(ctx, B.x - 4 * s, B.y - 4 * s, B.size + 8 * s, B.size + 8 * s, 10 * s);
   ctx.fillStyle = 'rgba(0,0,0,0.35)';
@@ -578,6 +588,8 @@ function drawBoard(ctx, L, main, t) {
     text(ctx, main.toast.text, B.x + B.size / 2, B.y - 12 * s - (1 - alpha) * 8 * s,
       17 * s, '#ffd54f', 'center', true, Math.max(0, alpha));
   }
+
+  if (shaking) ctx.restore();
 }
 
 /* ================= 特效渲染 ================= */
@@ -586,7 +598,7 @@ function drawBoard(ctx, L, main, t) {
 function bulletDuration(shots) {
   let maxLen = 1;
   for (let i = 0; i < (shots || []).length; i++) maxLen = Math.max(maxLen, shots[i].path.length);
-  return maxLen * SKILL.BULLET_FRAME + 260;
+  return maxLen * SKILL.BULLET_FRAME + 380;
 }
 
 /** 一整格白色闪光（消行 / 过关清场） */
@@ -639,21 +651,40 @@ function drawTurretFx(ctx, f, L, px, py, cell) {
     ctx.strokeStyle = accent;
     ctx.lineWidth = Math.max(1, cell * 0.07);
     ctx.stroke();
-    // 命中爆点：十字火花
+    // 命中爆点：白热闪 + 扩散环 + 十字/斜向火花（打击感加强）
     for (let j = 0; j < shot.hits.length; j++) {
       const hit = shot.hits[j];
       if (hit.step === undefined || frame < hit.step) continue;
-      const g = Math.min(1, (frame - hit.step) / 2.2);
-      const r = cell * (0.25 + g * 0.55);
-      ctx.globalAlpha = Math.max(0, 1 - g) * 0.9;
+      const g = Math.min(1, (frame - hit.step) / 3.2);
+      const hx2 = cx(hit), hy2 = cy(hit);
+      const r = cell * (0.3 + g * 0.75);
+      if (g < 0.3) {
+        ctx.globalAlpha = (1 - g / 0.3) * 0.95;
+        ctx.fillStyle = '#fffde7';
+        ctx.beginPath();
+        ctx.arc(hx2, hy2, cell * (0.5 - g * 0.5), 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = Math.max(0, 1 - g);
       ctx.strokeStyle = '#ffe082';
-      ctx.lineWidth = Math.max(1, cell * 0.1);
+      ctx.lineWidth = Math.max(1.2, cell * 0.13 * (1 - g) + 0.8);
       ctx.beginPath();
-      ctx.arc(cx(hit), cy(hit), r, 0, Math.PI * 2);
+      ctx.arc(hx2, hy2, r, 0, Math.PI * 2);
       ctx.stroke();
       ctx.beginPath();
-      ctx.moveTo(cx(hit) - r, cy(hit)); ctx.lineTo(cx(hit) + r, cy(hit));
-      ctx.moveTo(cx(hit), cy(hit) - r); ctx.lineTo(cx(hit), cy(hit) + r);
+      ctx.moveTo(hx2 - r, hy2); ctx.lineTo(hx2 + r, hy2);
+      ctx.moveTo(hx2, hy2 - r); ctx.lineTo(hx2, hy2 + r);
+      ctx.stroke();
+      // 斜向四道火花
+      ctx.globalAlpha = Math.max(0, 1 - g) * 0.75;
+      ctx.strokeStyle = accent;
+      ctx.lineWidth = Math.max(1, cell * 0.07);
+      const dr = r * 0.72;
+      ctx.beginPath();
+      ctx.moveTo(hx2 - dr, hy2 - dr); ctx.lineTo(hx2 - dr * 1.7, hy2 - dr * 1.7);
+      ctx.moveTo(hx2 + dr, hy2 - dr); ctx.lineTo(hx2 + dr * 1.7, hy2 - dr * 1.7);
+      ctx.moveTo(hx2 - dr, hy2 + dr); ctx.lineTo(hx2 - dr * 1.7, hy2 + dr * 1.7);
+      ctx.moveTo(hx2 + dr, hy2 + dr); ctx.lineTo(hx2 + dr * 1.7, hy2 + dr * 1.7);
       ctx.stroke();
     }
   }
@@ -734,6 +765,82 @@ function drawResonanceFx(ctx, f, L, px, py, cell) {
   ctx.restore();
 }
 
+/**
+ * 命中爆点（子弹击落 / 共鸣带走）：白热核心 + 双层冲击波 + 放射火花 + 方格碎块外飞。
+ * 大范围共鸣时只给前 IMPACT_FULL 格画完整爆点，其余画简化闪光，控制绘制开销。
+ */
+const IMPACT_FULL = 24;
+
+function drawImpactFx(ctx, f, L, px, py, cell) {
+  const k = Math.max(0, Math.min(1, f.t / f.dur));
+  const accent = f.accent || '#ffe082';
+  const cells = f.cells || [];
+  const cx = (c) => px(c) + cell / 2;
+  const cy = (c) => py(c) + cell / 2;
+  ctx.save();
+  for (let i = 0; i < cells.length; i++) {
+    const c = cells[i];
+    const x = cx(c), y = cy(c);
+    if (i >= IMPACT_FULL) {
+      // 简化：整格渐隐闪光
+      ctx.globalAlpha = Math.max(0, 1 - k) * 0.5;
+      ctx.fillStyle = accent;
+      const pad = cell * 0.18;
+      ctx.fillRect(px(c) + pad, py(c) + pad, cell - pad * 2, cell - pad * 2);
+      continue;
+    }
+    // 1) 白热核心（前 35%）
+    if (k < 0.35) {
+      const kk = k / 0.35;
+      ctx.globalAlpha = 1 - kk * 0.85;
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(x, y, Math.max(1, cell * (0.6 - kk * 0.16)), 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // 2) 双层冲击波
+    for (let j = 0; j < 2; j++) {
+      const g = (k - j * 0.14) / 0.62;
+      if (g <= 0 || g >= 1) continue;
+      ctx.globalAlpha = (1 - g) * (j ? 0.4 : 0.9);
+      ctx.strokeStyle = j ? accent : '#fff8e1';
+      ctx.lineWidth = Math.max(1, cell * (0.17 * (1 - g) + 0.03));
+      ctx.beginPath();
+      ctx.arc(x, y, cell * (0.3 + g * (1.45 + j * 0.55)), 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    // 3) 放射火花（8 条，按格序错开角度）
+    const g3 = Math.min(1, k / 0.7);
+    if (g3 < 1) {
+      const r1 = cell * (0.2 + g3 * 1.1);
+      const r2 = r1 + cell * 0.24 * (1 - g3);
+      ctx.globalAlpha = (1 - g3) * 0.95;
+      ctx.lineWidth = Math.max(1, cell * 0.1 * (1 - g3) + 0.6);
+      for (let a = 0; a < 8; a++) {
+        const ang = (a / 8) * Math.PI * 2 + i * 0.42;
+        ctx.strokeStyle = a % 2 ? accent : '#fffde7';
+        ctx.beginPath();
+        ctx.moveTo(x + Math.cos(ang) * r1, y + Math.sin(ang) * r1);
+        ctx.lineTo(x + Math.cos(ang) * r2, y + Math.sin(ang) * r2);
+        ctx.stroke();
+      }
+    }
+    // 4) 方格碎块向四角外飞
+    const g4 = Math.min(1, k / 0.85);
+    if (g4 < 1) {
+      ctx.globalAlpha = (1 - g4) * 0.85;
+      ctx.fillStyle = accent;
+      const half = cell * 0.2;
+      const off = cell * (0.12 + g4 * 0.8);
+      for (let q = 0; q < 4; q++) {
+        const sx = q % 2 ? 1 : -1, sy = q < 2 ? -1 : 1;
+        ctx.fillRect(x + sx * off - half / 2, y + sy * off - half / 2, half, half);
+      }
+    }
+  }
+  ctx.restore();
+}
+
 function drawFx(ctx, L, main, t, px, py, cell) {
   const list = main.fx || [];
   for (let i = 0; i < list.length; i++) {
@@ -743,8 +850,8 @@ function drawFx(ctx, L, main, t, px, py, cell) {
     const kind = f.kind || 'clear';
     if (kind === 'clear') {
       drawFlashCells(ctx, f.cells, k, px, py, cell, '#ffffff', 0);
-    } else if (kind === 'blast') {
-      drawFlashCells(ctx, f.cells, k, px, py, cell, '#ffe082', 0.16);
+    } else if (kind === 'impact' || kind === 'blast') {
+      drawImpactFx(ctx, f, L, px, py, cell);
     } else if (kind === 'turret') {
       drawTurretFx(ctx, f, L, px, py, cell);
     } else if (kind === 'resonance') {
@@ -1120,8 +1227,9 @@ function drawHelp(ctx, L, main) {
     '· 消除后只有贴近消除线的一侧沉降，另一半保持',
     '· 合格分＝过关：棋盘清场、新关重开，积分累加',
     '· 第 2 关起出现技能方块（金色炮台 / 青色共鸣）',
-    '· 炮台＝落地时发射能量弹，击落命中的方格',
+    '· 炮台＝落地发射能量弹，穿过自己方块击落别家',
     '· 共鸣＝被消除或被击落时，同类方格一起消失',
+    '· 被技能带走的方块各自放出技能（炮台会补射）',
     '· 每 ' + CARD.INTERVAL + ' 分弹三张属性牌：子弹数 / 穿透 /',
     '  反弹 / 共鸣范围 / 爆炸·激光… 本局永久生效',
     '· 中心出生点被堵住时游戏结束',

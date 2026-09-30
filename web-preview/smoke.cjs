@@ -306,42 +306,59 @@ function freshGame() {
   assert.ok(main.fx.length > 0 || main.toast, '过关应有动效或提示');
 }
 
-/* 3) 炮台：落地开火击落方格，其余方格保持，且有弹道动效 */
+/* 3) 炮台：落地开火击落方格，穿过自己方块的其余格，其余方格保持，且有弹道/爆点动效 */
 {
   const core = freshGame();
-  main.fx = []; main.floats = [];
+  main.fx = []; main.floats = []; main.shake = null;
   core.board.lock([{ x: 8, y: 12 }], 'J');
   core.board.lock([{ x: 8, y: 6 }], 'Z'); // 穿透 0 → 不应被击落
   core.phase = 'fall';
   core.current = {
     type: 'O', matrix: SHAPES.O, dir: 0, x: 8, y: SR - 2,
-    skill: { kind: 'turret', mx: 0, my: 0, mods: Skills.defaultMods() },
+    skill: { kind: 'turret', mx: 0, my: 1, mods: Skills.defaultMods() }, // 技能格在 (8,19)，向上先遇到己方格 (8,18)
   };
   core.hardDrop();
   frames(2, 50);
-  assert.strictEqual(core.board.grid[12][8], null, '炮台应击落弹道上的方格');
-  assert.strictEqual(core.board.grid[6][8], 'Z', '穿透 0：远处方格不受影响');
+  assert.strictEqual(core.board.grid[SR - 2][8], 'O', '子弹不打自己方块的其余格');
+  assert.strictEqual(core.board.grid[12][8], null, '穿过己方格后击落弹道上的方格');
+  assert.strictEqual(core.board.grid[6][8], 'Z', '穿透 0：更远处方格不受影响');
   assert.strictEqual(core.skillKills, 1);
-  assert.ok(core.board.skillAt(8, SR - 2) && core.board.skillAt(8, SR - 2).kind === 'turret', '炮台格应留在场上');
-  assert.ok(main.fx.length >= 1, '应有子弹动效: ' + JSON.stringify(main.fx.map((f) => f.kind)));
+  assert.ok(core.board.skillAt(8, SR - 1) && core.board.skillAt(8, SR - 1).kind === 'turret', '炮台格应留在场上');
+  const kinds = main.fx.map((f) => f.kind);
+  assert.ok(kinds.indexOf('turret') >= 0, '应有子弹弹道动效: ' + JSON.stringify(kinds));
+  assert.ok(kinds.indexOf('impact') >= 0, '应有命中爆点动效: ' + JSON.stringify(kinds));
   assert.ok(main.floats.length >= 1, '应有技能加分漂浮字');
 }
 
-/* 4) 共鸣：整行消除时带走同类方格 */
+/* 3b) 命中震屏：击落方格时触发，且会自然结束 */
+{
+  assert.ok(main.shake && main.shake.amp > 0, '命中应触发震屏');
+  frames(12, 50);
+  assert.strictEqual(main.shake, null, '震屏应在时长结束后复位');
+}
+
+/* 4) 共鸣：整行消除时带走同类方格；被带走的炮台格补射（各自的技能特效） */
 {
   const core = freshGame();
+  main.fx = []; main.floats = [];
   const row = [];
   for (let c = 0; c < SC - 2; c++) row.push({ x: c, y: SR - 1 });
   core.board.lock(row, 'Q');
   core.board.setSkill(3, SR - 1, { kind: 'resonance', dir: 0, mods: Skills.defaultMods() });
-  core.board.lock([{ x: 7, y: 3 }], 'Q'); // 同类远端方格
+  core.board.lock([{ x: 7, y: 3 }], 'Q'); // 同类远端方格（带炮台 → 被带走时补射）
+  core.board.setSkill(7, 3, { kind: 'turret', dir: 0, mods: Skills.defaultMods(), own: [{ x: 7, y: 3 }] });
+  core.board.lock([{ x: 7, y: 0 }], 'J'); // 补射目标
   core.phase = 'fall';
   core.current = { type: 'O', matrix: SHAPES.O, dir: 0, x: SC - 2, y: SR - 2 };
   core.hardDrop();
   frames(2, 50);
-  assert.strictEqual(core.skillKills, 1, '共鸣应带走 1 个同类方格');
   assert.strictEqual(core.board.allCells().filter((c) => c.type === 'Q').length, 0, '同类方格全部消失');
-  assert.ok(main.fx.some((f) => f.kind === 'resonance' || f.kind === 'blast'), '应有共鸣动效');
+  assert.strictEqual(core.board.grid[0][7], null, '被共鸣带走的炮台格补射击落目标');
+  assert.ok(core.skillKills >= 2, '共鸣 + 补射击落都计分: ' + core.skillKills);
+  const kinds4 = main.fx.map((f) => f.kind);
+  assert.ok(kinds4.indexOf('resonance') >= 0, '应有共鸣波动效');
+  assert.ok(kinds4.indexOf('impact') >= 0, '被消除的方格应有各自的命中爆点');
+  assert.ok(kinds4.indexOf('turret') >= 0, '补射应有自己的弹道动效: ' + JSON.stringify(kinds4));
 }
 
 /* 5) 属性牌：三选一场景进入 / 选择 / 跳过 */

@@ -20,7 +20,7 @@ const KINDS = {
     key: 'turret',
     name: '炮台',
     kindLabel: '落地技能',
-    desc: '落地瞬间发射能量弹，击落命中的方格',
+    desc: '落地瞬间发射能量弹，穿过己方方块击落其他方格',
     accent: SKILL.ACCENT.turret,
   },
   resonance: {
@@ -94,17 +94,35 @@ function shotDirs(dir) {
 }
 
 /**
+ * 己方格子集合：开火方块自己其余格的位置表。
+ * 子弹会**穿过**这些格子（不击落、不消耗穿透），继续射击别的方块。
+ */
+function ownSet(cells) {
+  if (!cells || !cells.length) return null;
+  const m = {};
+  for (let i = 0; i < cells.length; i++) m[cells[i].x + ',' + cells[i].y] = true;
+  return m;
+}
+
+/** 归一化 ignore 参数：可传格子数组，也可传已构建的位置表 */
+function normIgnore(ignore) {
+  if (!ignore) return null;
+  return Array.isArray(ignore) ? ownSet(ignore) : ignore;
+}
+
+/**
  * 单颗子弹飞行：从 (x,y) 沿 dirIdx 方向逐格前进，
  * 每命中一个方格就把它计入 hits（可击落 1 + pierce 格），
  * 撞墙时若还有反弹次数则顺时针转 90° 继续飞。
  * 返回 { path: [{x,y}...], hits: [{x,y,type,skill}...] }（path 为途经格顺序，用于动画）
  */
-function travelBullet(board, x, y, dirIdx, mods) {
+function travelBullet(board, x, y, dirIdx, mods, ignore) {
   const budget = 1 + Math.max(0, mods.pierce | 0);
   let bounce = Math.max(0, mods.bounce | 0);
   let d = DIRS[((dirIdx % 4) + 4) % 4];
   let dx = d.x, dy = d.y;
   let px = x, py = y;
+  const ign = normIgnore(ignore);
   const path = [], hits = [];
   let guard = 0;
   while (guard++ < 240) {
@@ -123,6 +141,7 @@ function travelBullet(board, x, y, dirIdx, mods) {
     }
     px = nx; py = ny;
     path.push({ x: px, y: py });
+    if (ign && ign[px + ',' + py]) continue; // 己方方块的其余格：穿过去，不算命中也不耗穿透
     if (board.occupied(px, py)) {
       const cell = board.remove(px, py);
       if (cell) cell.step = path.length - 1; // 命中发生在第几步（动画用）
@@ -137,12 +156,12 @@ function travelBullet(board, x, y, dirIdx, mods) {
  * 炮台格落地开火（会把击落的方格从棋盘移除）
  * 返回 { origin, shots: [{dir, path, hits}] }
  */
-function fireTurret(board, x, y, dir, mods) {
+function fireTurret(board, x, y, dir, mods, ignore) {
   const n = Math.max(1, Math.min(4, mods.bullets | 0));
   const dirs = shotDirs(dir).slice(0, n);
   const shots = [];
   for (let i = 0; i < dirs.length; i++) {
-    const r = travelBullet(board, x, y, dirs[i], mods);
+    const r = travelBullet(board, x, y, dirs[i], mods, ignore);
     shots.push({ dir: dirs[i], path: r.path, hits: r.hits });
   }
   return { origin: { x, y }, dir: dir, shots };
@@ -192,46 +211,75 @@ function resonanceTargets(board, x, y, type, mods) {
 }
 
 /**
- * 共鸣级联结算：seeds 为「刚刚消失」的格子（含 type/skill 快照，已从棋盘移除）。
- * 其中带共鸣技能的格子会波及同类方格，被波及的格子若也带共鸣会继续引爆（有上限）。
- * 返回 { destroyed: [{x,y,type,skill}], waves: [{origin, pattern, scope, cells}] }
+ * 技能级联结算：seeds 为「刚刚消失」的格子（含 type/skill 快照，已从棋盘移除）。
+ * 每个消失的格子都会释放**自己的**技能特效：
+ *  - 共鸣格 → 同类方格一同消失（按消失方式扩散），被波及的格子进入下一轮
+ *  - 炮台格 → 就地补射一发能量弹（被击落也算开火），击落的格子进入下一轮
+ * 有轮次与总量上限，避免大范围互相引爆死循环。
+ * @returns { destroyed:[{x,y,type,skill}], steps:[{kind, origin, dir?, pattern?, scope?, shots?, cells}] }
+ *          steps 按结算顺序排列，每步的 cells 是「这一步消失的格子」（渲染与计分各归各）
  */
-function cascadeResonance(board, seeds, limit) {
-  const cap = limit || SKILL.CASCADE_LIMIT;
+function cascadeSkills(board, seeds, opts) {
+  opts = opts || {};
+  const cap = opts.limit || SKILL.CASCADE_LIMIT;
+  const turretKnockout = opts.turretKnockout !== false; // 炮台被带走时是否补射一发
   const destroyed = [];
-  const waves = [];
+  const steps = [];
   const fired = {};
   let queue = (seeds || []).slice();
   let round = 0;
-  while (queue.length && round++ < 48) {
+  while (queue.length && round++ < 48 && destroyed.length < cap) {
     const next = [];
     for (let i = 0; i < queue.length; i++) {
       const s = queue[i];
-      if (!s || !s.skill || s.skill.kind !== 'resonance') continue;
-      const key = s.x + ',' + s.y;
+      if (!s || !s.skill) continue;
+      const kind = s.skill.kind;
+      // 共鸣格：同类一同消失；炮台格：被带走时补射一发（各自释放自己的技能特效）
+      if (kind !== 'resonance' && !(kind === 'turret' && turretKnockout)) continue;
+      const key = kind + '@' + s.x + ',' + s.y;
       if (fired[key]) continue;
       fired[key] = true;
       const mods = s.skill.mods || defaultMods();
-      const targets = resonanceTargets(board, s.x, s.y, s.type, mods);
       const removed = [];
-      for (let j = 0; j < targets.length && destroyed.length < cap; j++) {
-        const cell = board.remove(targets[j].x, targets[j].y);
-        if (cell) {
-          removed.push(cell);
-          destroyed.push(cell);
+      if (kind === 'resonance') {
+        const targets = resonanceTargets(board, s.x, s.y, s.type, mods);
+        for (let j = 0; j < targets.length && destroyed.length + removed.length < cap; j++) {
+          const cell = board.remove(targets[j].x, targets[j].y);
+          if (cell) removed.push(cell);
         }
+        if (removed.length) {
+          steps.push({
+            kind: 'resonance', origin: { x: s.x, y: s.y },
+            pattern: mods.pattern || 'none', scope: mods.scope.slice(), cells: removed,
+          });
+        }
+      } else {
+        // 炮台被击落 / 被共鸣带走 → 就地补射（子弹同样穿过它自己方块的其余格）
+        const res = fireTurret(board, s.x, s.y, s.skill.dir || 0, mods, s.skill.own);
+        for (let k = 0; k < res.shots.length; k++) {
+          for (let j = 0; j < res.shots[k].hits.length; j++) removed.push(res.shots[k].hits[j]);
+        }
+        steps.push({ kind: 'turret', origin: res.origin, dir: res.dir, shots: res.shots, cells: removed, knock: true });
       }
-      if (removed.length) {
-        waves.push({
-          origin: { x: s.x, y: s.y }, kind: 'resonance',
-          pattern: mods.pattern || 'none', scope: mods.scope.slice(), cells: removed,
-        });
-        for (let j = 0; j < removed.length; j++) next.push(removed[j]);
-      }
+      for (let j = 0; j < removed.length; j++) { destroyed.push(removed[j]); next.push(removed[j]); }
     }
     queue = next;
   }
-  return { destroyed, waves };
+  return { destroyed, steps };
+}
+
+/**
+ * 兼容旧接口：只结算共鸣级联（炮台被带走时不补射）。
+ * 返回 { destroyed, waves: [{origin, kind, pattern, scope, cells}] }
+ */
+function cascadeResonance(board, seeds, limit) {
+  const r = cascadeSkills(board, seeds, { limit: limit, turretKnockout: false });
+  const waves = [];
+  for (let i = 0; i < r.steps.length; i++) {
+    const st = r.steps[i];
+    waves.push({ origin: st.origin, kind: 'resonance', pattern: st.pattern, scope: st.scope, cells: st.cells });
+  }
+  return { destroyed: r.destroyed, waves: waves };
 }
 
 /* ================= 属性牌 ================= */
@@ -337,7 +385,7 @@ function buildSummary(mods) {
 module.exports = {
   KINDS, PATTERN_NAMES, SCOPE_NAMES, TAG_LABEL, CARD_POOL,
   defaultMods, cloneMods, skillChance, rollKind, cellScore,
-  shotDirs, travelBullet, fireTurret,
-  resonanceTargets, cascadeResonance,
+  shotDirs, travelBullet, fireTurret, ownSet, normIgnore,
+  resonanceTargets, cascadeSkills, cascadeResonance,
   availableCards, offerCards, cardById, applyCard, buildSummary, scopeText,
 };

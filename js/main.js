@@ -38,6 +38,7 @@ class Main {
     this.newBest = false;
     this.fx = [];      // 特效队列 [{kind, cells/shots/waves, t, dur}]
     this.floats = [];  // 漂浮加分字 [{text, x, y, t, dur, color}]
+    this.shake = null; // 命中震屏 {t, dur, amp}
     this.toast = null; // 浮字 {text, t, dur}
     this.ptoast = null; // 全局平台提示 {text, t, dur}（所有场景可见）
     this.last = Date.now();
@@ -90,6 +91,7 @@ class Main {
     this.core.reset();
     this.fx = [];
     this.floats = [];
+    this.shake = null;
     this.toast = null;
     this.newBest = false;
     this.reviveUsed = false;
@@ -374,15 +376,21 @@ class Main {
         this.toast = { text: ev.count >= 2 ? ('消除 x' + ev.count + '！') : '消除！', t: 0, dur: 900 };
         this.vibrate(20);
       } else if (ev.type === 'turret') {
-        // 炮台落地开火：弹道动画 + 被击落方格闪光
+        // 炮台开火：弹道动画 + 命中爆点（被击落格各自的技能特效由后续事件带出）
         const dur = Render.bulletDuration(ev.shots);
         if (ev.shots.length) this.fx.push({ kind: 'turret', origin: ev.origin, shots: ev.shots, t: 0, dur });
-        if (ev.count) this.fx.push({ kind: 'blast', cells: ev.cells, t: 0, dur: 320 });
-        this._floatSkillScore(ev, '炮台');
+        if (ev.count) {
+          this.fx.push({ kind: 'impact', cells: ev.cells, accent: SKILL.ACCENT.turret, t: 0, dur: 560 });
+          this._shake(ev.count >= 3 ? 5.5 : 3.6, 260);
+        }
+        this._floatSkillScore(ev, ev.knock ? '补射' : '炮台');
         this.vibrate(ev.count ? 25 : 10);
       } else if (ev.type === 'resonance') {
         this.fx.push({ kind: 'resonance', waves: ev.waves, t: 0, dur: 460 });
-        if (ev.count) this.fx.push({ kind: 'blast', cells: ev.cells, t: 0, dur: 320 });
+        if (ev.count) {
+          this.fx.push({ kind: 'impact', cells: ev.cells, accent: SKILL.ACCENT.resonance, t: 0, dur: 620 });
+          this._shake(Math.min(7, 3 + ev.count * 0.5), 300);
+        }
         this._floatSkillScore(ev, '共鸣');
         this.vibrate(ev.count ? 30 : 10);
       } else if (ev.type === 'levelup') {
@@ -421,11 +429,19 @@ class Main {
     this.floats.push({ text: label + ' +' + ev.score, x: ox, y: oy, t: 0, dur: 900, color: '#ffe082' });
   }
 
+  /** 命中震屏：取更强的一次，避免密集命中时抖动叠加过猛 */
+  _shake(amp, dur) {
+    if (!this.shake || this.shake.t >= this.shake.dur || amp > this.shake.amp) {
+      this.shake = { t: 0, dur: dur || 260, amp: amp || 3 };
+    }
+  }
+
   /** 属性牌三选一：选牌并恢复对局 */
   chooseCard(id) {
     if (!this.core.pickCard(id)) return;
     this.state = 'playing';
     this.fx = [];
+    this.shake = null;
     this.vibrate(20);
   }
 
@@ -433,6 +449,10 @@ class Main {
     for (let i = this.fx.length - 1; i >= 0; i--) {
       this.fx[i].t += dt;
       if (this.fx[i].t >= this.fx[i].dur) this.fx.splice(i, 1);
+    }
+    if (this.shake) {
+      this.shake.t += dt;
+      if (this.shake.t >= this.shake.dur) this.shake = null;
     }
     for (let i = this.floats.length - 1; i >= 0; i--) {
       this.floats[i].t += dt;
