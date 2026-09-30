@@ -8,7 +8,8 @@ const assert = require('node:assert');
 const GameCore = require('../js/gamecore.js');
 const Board = require('../js/board.js');
 const { SHAPES, rotateCW, cellsOf } = require('../js/tetromino.js');
-const { COLS, ROWS, DIRS, PERP, FALL_BASE, FALL_STEP, FALL_MIN, HINT_BASE, HINT_STEP, HINT_MIN } = require('../js/config.js');
+const { COLS, ROWS, DIRS, PERP, FALL_BASE, FALL_STEP, FALL_MIN, HINT_BASE, HINT_STEP, HINT_MIN,
+  LEVEL_TARGETS, LEVEL_TARGET_STEP, levelTarget } = require('../js/config.js');
 
 /** 可复现的伪随机源 */
 function constRng(v) {
@@ -312,21 +313,60 @@ test('core：未发生消除时不触发下沉（保留四向重力锁定的悬�
   assert.strictEqual(core.board.grid[2][3], 'T'); // 悬空块保持原位，不沉降
 });
 
-test('core：每 8 行升 1 关，下落间隔缩短', () => {
+test('config：各关合格分表递增，表外按公式外推', () => {
+  assert.strictEqual(levelTarget(1), LEVEL_TARGETS[0]);
+  assert.strictEqual(levelTarget(2), LEVEL_TARGETS[1]);
+  for (let n = 2; n <= LEVEL_TARGETS.length; n++) {
+    assert.ok(levelTarget(n) > levelTarget(n - 1), '合格分应逐关递增: 第' + n + '关');
+  }
+  // 超出表格的关卡：第 n 关净增 LEVEL_TARGET_STEP × n
+  const L = LEVEL_TARGETS.length;
+  assert.strictEqual(levelTarget(L + 1), LEVEL_TARGETS[L - 1] + LEVEL_TARGET_STEP * (L + 1));
+  assert.ok(levelTarget(L + 2) > levelTarget(L + 1));
+});
+
+test('core：达到第 1 关合格分即升关，下落间隔缩短', () => {
   const core = new GameCore({ rng: constRng(0.1) });
   const iv1 = core.fallInterval();
   assert.strictEqual(iv1, FALL_BASE);
-  core.lines = 7;
   core.phase = 'fall';
   const cells = [];
   for (let c = 0; c < COLS - 2; c++) cells.push({ x: c, y: ROWS - 1 });
   core.board.lock(cells, 'J');
+  core.score = LEVEL_TARGETS[0] - 100; // 距第 1 关合格分差 100 分
   core.current = { type: 'O', matrix: SHAPES.O, dir: 0, x: COLS - 2, y: ROWS - 2 };
-  core.hardDrop(); // 补满底行缺口 → 消 1 行 → lines=8 → 升级
-  assert.strictEqual(core.lines, 8);
-  assert.strictEqual(core.level, 2);
+  core.hardDrop(); // 补满底行缺口 → 消 1 行 +100×1 → 达到合格分
+  assert.strictEqual(core.level, 2, '达到合格分应升到第 2 关');
   assert.strictEqual(core.fallInterval(), FALL_BASE - FALL_STEP);
   assert.strictEqual(core.hintTime(), HINT_BASE - HINT_STEP);
+  const evs = core.drainEvents();
+  assert.ok(evs.some((e) => e.type === 'levelup' && e.level === 2), '应推入 levelup 事件');
+});
+
+test('core：分数一次跨越多条合格线 → 连升多关', () => {
+  const core = new GameCore({ rng: constRng(0.1) });
+  core.score = LEVEL_TARGETS[2] - 1; // 距第 3 关合格分差 1 分
+  core._syncLevel();
+  assert.strictEqual(core.level, 3);
+  const ups = core.drainEvents().filter((e) => e.type === 'levelup');
+  assert.deepStrictEqual(ups.map((e) => e.level), [2, 3], '应连升两级并各推一个事件');
+});
+
+test('core：消除行数不再直接升关（升关只看合格分）', () => {
+  const core = new GameCore({ rng: constRng(0.1) });
+  core.lines = 100; // 旧规则（8 行/关）下早已连升，新规则不生效
+  core.score = LEVEL_TARGETS[0] - 1;
+  core._syncLevel();
+  assert.strictEqual(core.level, 1);
+});
+
+test('core：自然下落软降分同样计入合格进度', () => {
+  const core = new GameCore({ rng: constRng(0.1) }); // 重力向下
+  core.score = LEVEL_TARGETS[0] - 2; // 差 2 分；软降每格 +1
+  core.phase = 'fall';
+  core.current = { type: 'O', matrix: SHAPES.O, dir: 0, x: 4, y: 0 };
+  core.update(core.fallInterval() * 2); // 自然下落 2 格
+  assert.strictEqual(core.level, 2, '软降分达到合格线也应升关');
 });
 
 test('core：速度有下限', () => {

@@ -31,6 +31,23 @@ const COLORS = {
   L: '#ffab40',
 };
 
+/* ================= 关卡合格分 =================
+ * 每一关都有一个「合格分」（累计分数目标）：本局累计分数达到当前关合格分即算过关，
+ * 升入下一关（下落提速、提示缩短）。想调整某一关多少分合格，直接改下表对应项即可。
+ * 表格覆盖前 10 关；超出表格的关卡按公式外推：第 n 关需再净得 LEVEL_TARGET_STEP × n 分。
+ * 默认曲线：第 1 关 500，第 2 关 1500，第 3 关 3000，第 4 关 5000 …（逐关增量 +500）
+ */
+const LEVEL_TARGETS = [500, 1500, 3000, 5000, 7500, 10500, 14000, 18000, 22500, 27500];
+const LEVEL_TARGET_STEP = 500;
+
+/** 第 level 关的合格分（累计分数目标）；level 从 1 开始 */
+function levelTarget(level) {
+  if (level <= LEVEL_TARGETS.length) return LEVEL_TARGETS[level - 1];
+  let t = LEVEL_TARGETS[LEVEL_TARGETS.length - 1];
+  for (let n = LEVEL_TARGETS.length + 1; n <= level; n++) t += LEVEL_TARGET_STEP * n;
+  return t;
+}
+
 /* ================= 平台能力配置 =================
  * 对应审核检测的五项能力：侧边栏复访 / 添加到桌面 / 订阅消息 / 广告 / 内购。
  * 所有标 TODO 的 ID 必须替换为「抖音开放平台开发者后台」中创建的真实 ID，
@@ -81,7 +98,11 @@ module.exports = {
   FALL_MIN: 80,      // 速度上限（最快每格 80ms）
   FALL_STEP: 40,     // 每升 1 关加快 ms
 
-  LINES_PER_LEVEL: 8,        // 每消除 8 行升 1 关
+  // 关卡合格分：累计分数达到 LEVEL_TARGETS[level-1] 即过该关（详见文件顶部说明）
+  LEVEL_TARGETS,
+  LEVEL_TARGET_STEP,
+  levelTarget,
+
   SCORE_TABLE: [0, 100, 250, 500, 800], // 同时消除 1/2/3/4 行的基础分
   SCORE_EXTRA: 200,          // 超过 4 行后每多 1 行的附加基础分
   SOFT_DROP_SCORE: 1,        // 自然下落每格 +1

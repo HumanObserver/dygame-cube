@@ -9,8 +9,8 @@
  *   4200 第 2 块下落中    → 截图 3-fall(4200)
  *   4900 布置消行（底行留最后两列 + O 块）
  *   5000 硬降 → 消行      → 截图 4-clear(5150)
- *   5500 布置升级（lines=7 + 次底行留最后两列 + O 块）
- *   5600 硬降 → 升 2 关   → 截图 5-levelup(5750)
+ *   5500 布置升级（分数压到合格线 -60 + 次底行留最后两列 + O 块）
+ *   5600 硬降 → 合格升 2 关 → 截图 5-levelup(5750)
  *   6200 中心 4×4 堵死 → spawn 碰撞 → 游戏结束 → 截图 6-gameover(6500)
  *   6800 打开排行榜       → 截图 7-rank(7100)
  */
@@ -51,11 +51,11 @@
   });
   at(5000, function () { G.core.hardDrop(); });
 
-  /* 升级演示：先补到 7 行，再消 1 行触发升级 */
+  /* 升级演示：把分数压到第 1 关合格线附近，再消 1 行触发「合格升关」 */
   at(5500, function () {
     var core = G.core, g = core.board.grid, c;
     var R = g.length, C = g[0].length;
-    core.lines = 7;
+    core.score = Math.max(0, core.levelTarget(core.level) - 60); // 距合格分差 60，消行 +100 即过关
     var pre = [];
     for (c = 0; c < C - 2; c++) if (!g[R - 2][c]) pre.push({ x: c, y: R - 2 });
     if (pre.length) core.board.lock(pre, 'J');

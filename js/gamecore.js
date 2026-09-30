@@ -9,7 +9,8 @@ const {
   COLS, ROWS, DIRS, PERP, TYPES,
   HINT_BASE, HINT_MIN, HINT_STEP,
   FALL_BASE, FALL_MIN, FALL_STEP,
-  LINES_PER_LEVEL, SCORE_TABLE, SCORE_EXTRA,
+  levelTarget: configLevelTarget,
+  SCORE_TABLE, SCORE_EXTRA,
   SOFT_DROP_SCORE, HARD_DROP_SCORE,
 } = require('./config.js');
 const { SHAPES, rotateCW, cellsOf, cloneMatrix } = require('./tetromino.js');
@@ -67,12 +68,28 @@ class GameCore {
 
   /* ---------- 关卡参数 ---------- */
 
+  /** 第 level 关的合格分（累计分数目标）；缺省为当前关 */
+  levelTarget(level) {
+    return configLevelTarget(level === undefined ? this.level : level);
+  }
+
   hintTime() {
     return Math.max(HINT_MIN, HINT_BASE - (this.level - 1) * HINT_STEP);
   }
 
   fallInterval() {
     return Math.max(FALL_MIN, FALL_BASE - (this.level - 1) * FALL_STEP);
+  }
+
+  /**
+   * 合格判定：累计分数达到当前关合格分即过关升 1 关（分数一次跨越多条合格线时连升）。
+   * 在每次加分后调用；升级会推入 levelup 事件（level = 升入的新关卡）。
+   */
+  _syncLevel() {
+    while (this.score >= this.levelTarget(this.level)) {
+      this.level++;
+      this.events.push({ type: 'levelup', level: this.level, target: this.levelTarget(this.level) });
+    }
   }
 
   /* ---------- 坐标换算 ---------- */
@@ -179,7 +196,10 @@ class GameCore {
       return false;
     }
     this.current = moved;
-    if (withSoftScore) this.score += SOFT_DROP_SCORE;
+    if (withSoftScore) {
+      this.score += SOFT_DROP_SCORE;
+      this._syncLevel(); // 软降分同样计入合格进度
+    }
     return true;
   }
 
@@ -217,6 +237,7 @@ class GameCore {
     let dist = 0;
     while (this._stepGravity(false)) dist++;
     this.score += dist * HARD_DROP_SCORE;
+    this._syncLevel();
   }
 
   /* ---------- 锁定 / 消行 / 升级 ---------- */
@@ -248,11 +269,7 @@ class GameCore {
       this.lines += count;
       this.events.push({ type: 'clear', cells: allCells, count, settled: settledMoved });
 
-      const newLevel = Math.floor(this.lines / LINES_PER_LEVEL) + 1;
-      if (newLevel > this.level) {
-        this.level = newLevel;
-        this.events.push({ type: 'levelup', level: this.level });
-      }
+      this._syncLevel(); // 累计分数达到当前关合格分 → 过关升级
     }
 
     this.current = null;

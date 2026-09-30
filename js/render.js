@@ -283,22 +283,38 @@ function drawMenu(ctx, L, main, t) {
   const btns = sceneButtons('menu', L, main.sceneOpts ? main.sceneOpts() : {});
   for (let i = 0; i < btns.length; i++) drawButton(ctx, btns[i], L, undefined, true);
 
-  text(ctx, 'v1.1.0 · 抖音小游戏', w / 2, h - 20 * s, 11 * s, 'rgba(255,255,255,0.35)', 'center', false);
+  text(ctx, 'v1.2.0 · 抖音小游戏', w / 2, h - 20 * s, 11 * s, 'rgba(255,255,255,0.35)', 'center', false);
 }
 
 function drawHud(ctx, L, main) {
   const s = L.s, hud = L.hud;
   const core = main.core;
-  const colW = (hud.w - 56 * s) / 3;
+  const target = core.levelTarget(); // 当前关合格分（累计分数目标）
+  const colW = (hud.w - 56 * s) / 4;
   const cols = [
-    { label: '分数', value: String(core.score) },
-    { label: '关卡', value: String(core.level) },
-    { label: '行数', value: String(core.lines) },
+    { label: '分数', value: String(core.score), size: 22 },
+    { label: '合格分', value: String(target), size: 16, color: '#ffd54f' },
+    { label: '关卡', value: String(core.level), size: 20 },
+    { label: '行数', value: String(core.lines), size: 20 },
   ];
   for (let i = 0; i < cols.length; i++) {
+    const c = cols[i];
     const cx = hud.x + colW * i + colW / 2;
-    text(ctx, cols[i].label, cx, hud.y + 16 * s, 11 * s, 'rgba(255,255,255,0.55)', 'center', false);
-    text(ctx, cols[i].value, cx, hud.y + 42 * s, i === 0 ? 24 * s : 20 * s, '#ffffff', 'center', true);
+    const fs = c.value.length > 6 ? c.size - 4 : c.size; // 长数字自动缩小
+    text(ctx, c.label, cx, hud.y + 16 * s, 11 * s, 'rgba(255,255,255,0.55)', 'center', false);
+    text(ctx, c.value, cx, hud.y + 42 * s, fs * s, c.color || '#ffffff', 'center', true);
+  }
+  // 本关进度条：上一关合格分 → 当前关合格分
+  const prev = core.level > 1 ? core.levelTarget(core.level - 1) : 0;
+  const k = Math.max(0, Math.min(1, (core.score - prev) / Math.max(1, target - prev)));
+  const bw = hud.w, bh = Math.max(3, 4 * s), bx = hud.x, by = hud.y + 50 * s;
+  roundRect(ctx, bx, by, bw, bh, bh / 2);
+  ctx.fillStyle = 'rgba(255,255,255,0.12)';
+  ctx.fill();
+  if (k > 0) {
+    roundRect(ctx, bx, by, Math.max(bh, bw * k), bh, bh / 2);
+    ctx.fillStyle = '#ffd54f';
+    ctx.fill();
   }
 }
 
@@ -667,7 +683,8 @@ function drawHelp(ctx, L, main) {
     '· 「落下」按钮：立即沿重力落底',
     '· 填满任意整行或整列即可消除得分',
     '· 消除后剩余方块整体下沉落底，可连锁消除',
-    '· 每消除 8 行升 1 关，下落速度加快',
+    '· 每关设有合格分：第 1 关 500 分、第 2 关 1500 分…',
+    '· 累计分数达到合格分即过关，下落速度逐关加快',
     '· 中心出生点被堵住时游戏结束',
   ];
   for (let i = 0; i < lines.length; i++) {

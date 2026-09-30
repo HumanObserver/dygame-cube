@@ -358,7 +358,7 @@ class Main {
         this.toast = { text: ev.count >= 2 ? ('消除 x' + ev.count + '！') : '消除！', t: 0, dur: 900 };
         this.vibrate(20);
       } else if (ev.type === 'levelup') {
-        this.toast = { text: '第 ' + ev.level + ' 关 · 速度提升！', t: 0, dur: 1400 };
+        this.toast = { text: '第 ' + (ev.level - 1) + ' 关合格！第 ' + ev.level + ' 关提速', t: 0, dur: 1600 };
         this.vibrate(30);
       } else if (ev.type === 'gameover') {
         const r = rank.submit(this.core.score, this.core.level, this.core.lines);
