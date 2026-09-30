@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>引力方块 · AI 录制</title>
+<style>
+  html, body { margin: 0; padding: 0; background: #05070f; overflow: hidden; }
+  #game-canvas { display: block; }
+</style>
+</head>
+<body>
+<script>
+  /* 录制逻辑尺寸 540×960，配合 --force-device-scale-factor=2 → 画布 1080×1920（抖音竖屏） */
+  window.__TT_LOGICAL_W = 540;
+  window.__TT_LOGICAL_H = 960;
+  /* main.js 会拆下 rAF 引用再裸调（this._raf(cb)），原生方法脱离 window 调用会抛
+   * Illegal invocation；包一层绑定安全的壳（保持原生时序，captureStream 才流畅） */
+  (function () {
+    var raf = window.requestAnimationFrame.bind(window);
+    var caf = window.cancelAnimationFrame.bind(window);
+    window.requestAnimationFrame = function (cb) { return raf(cb); };
+    window.cancelAnimationFrame = function (id) { return caf(id); };
+  })();
+</script>
+<script src="tt-shim.js"></script>
+<script src="bundle.js"></script>
+<script src="autoplayer.js"></script>
+<script src="recorder.js"></script>
+</body>
+</html>

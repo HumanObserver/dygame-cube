@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>frame grabber</title>
+<style>html,body{margin:0;background:#000}video{width:540px}</style>
+</head>
+<body>
+<video id="v" muted playsinline></video>
+<script>
+(function () {
+  var q = new URLSearchParams(location.search);
+  var file = q.get('file');
+  var times = (q.get('times') || '5,30,60').split(',').map(Number);
+  var scale = parseFloat(q.get('scale') || '0.5'); // 输出缩放（540 宽够检查用）
+  var v = document.getElementById('v');
+  v.src = file;
+  var cv = document.createElement('canvas');
+
+  function post(t, blob) {
+    return fetch('/__frame?t=' + t, { method: 'POST', body: blob });
+  }
+  function seek(t) {
+    return new Promise(function (res, rej) {
+      function on() { v.removeEventListener('seeked', on); res(); }
+      v.addEventListener('seeked', on);
+      v.addEventListener('error', function () { rej(new Error('video error')); });
+      try { v.currentTime = t; } catch (e) { rej(e); }
+      setTimeout(function () { rej(new Error('seek timeout ' + t)); }, 15000);
+    });
+  }
+  function grab() {
+    return new Promise(function (res) {
+      cv.width = Math.round(v.videoWidth * scale);
+      cv.height = Math.round(v.videoHeight * scale);
+      cv.getContext('2d').drawImage(v, 0, 0, cv.width, cv.height);
+      cv.toBlob(function (b) { res(b); }, 'image/png');
+    });
+  }
+  /* 程序化画面体检：平均亮度 / 彩色度 / 字幕条区域亮像素占比 */
+  function stats() {
+    var ctx = cv.getContext('2d');
+    var d = ctx.getImageData(0, 0, cv.width, cv.height).data;
+    var w = cv.width, h = cv.height;
+    var lumSum = 0, chromaSum = 0, n = 0;
+    var y0 = Math.floor(h * 0.80) * w, y1 = Math.floor(h * 0.88) * w;
+    var subBright = 0, subN = 0;
+    for (var i = 0; i < d.length; i += 16) { // 每 4 像素采样
+      var r = d[i], g = d[i + 1], b = d[i + 2];
+      var lum = (r + g + b) / 3;
+      lumSum += lum; n++;
+      chromaSum += (Math.max(r, g, b) - Math.min(r, g, b));
+      if (i >= y0 * 4 && i < y1 * 4) { subN++; if (lum > 150) subBright++; }
+    }
+    return {
+      mean: Math.round(lumSum / n),
+      chroma: Math.round(chromaSum / n),
+      sub: subN ? Math.round(subBright / subN * 1000) / 1000 : 0,
+    };
+  }
+  function passTarget(t) {
+    return new Promise(function (res) {
+      function on() {
+        if (v.currentTime >= t || v.ended) {
+          v.removeEventListener('timeupdate', on);
+          res();
+        }
+      }
+      v.addEventListener('timeupdate', on);
+      setTimeout(function () { v.removeEventListener('timeupdate', on); res(); }, 40000);
+    });
+  }
+  (async function () {
+    try {
+      await new Promise(function (res, rej) {
+        v.addEventListener('loadedmetadata', res);
+        v.addEventListener('error', function () { rej(new Error('load error')); });
+      });
+      var info = { w: v.videoWidth, h: v.videoHeight, dur: v.duration };
+      await fetch('/__meta?' + new URLSearchParams(info), { method: 'POST' });
+      var mode = q.get('mode') || 'seek';
+      if (mode === 'play') {
+        /* 顺序播放采样：fMP4 无随机索引时 seek 不可靠，播放流则完全正常 */
+        v.muted = true;
+        v.playbackRate = parseFloat(q.get('rate') || '8');
+        await v.play();
+        var sorted = times.slice().sort(function (a, b) { return a - b; });
+        for (var i = 0; i < sorted.length; i++) {
+          await passTarget(sorted[i]);
+          var blob = await grab();
+          var st = stats();
+          await post(sorted[i] + '&mean=' + st.mean + '&chroma=' + st.chroma + '&sub=' + st.sub, blob);
+        }
+      } else {
+        for (var j = 0; j < times.length; j++) {
+          var t = Math.min(times[j], v.duration - 0.05);
+          await seek(t);
+          var blob2 = await grab();
+          var st2 = stats();
+          await post(t + '&mean=' + st2.mean + '&chroma=' + st2.chroma + '&sub=' + st2.sub, blob2);
+        }
+      }
+      document.title = 'FRAMES-DONE OK';
+    } catch (e) {
+      await fetch('/__fail?' + encodeURIComponent(e.message));
+      document.title = 'FRAMES-DONE FAIL';
+    }
+  })();
+})();
+</script>
+</body>
+</html>

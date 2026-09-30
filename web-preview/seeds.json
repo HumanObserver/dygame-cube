@@ -1,0 +1,706 @@
+﻿{
+    "generatedAt":  "2026-09-30 20:29",
+    "criteria":  "finishAfterMs=60000; video 70~102s; clears\u003e=2; level\u003e=2; 0 mismatch (simulate.cjs 1..80)",
+    "botSeed":  777,
+    "finishAfterMs":  60000,
+    "primary":  15,
+    "seeds":  [
+                  {
+                      "seed":  32,
+                      "score":  1180,
+                      "level":  2,
+                      "lines":  4,
+                      "videoS":  81.2,
+                      "clearEvents":  3,
+                      "maxChain":  2,
+                      "clearAt":  [
+                                      53.5,
+                                      55.4,
+                                      59
+                                  ],
+                      "levelupAt":  [
+                                        53.5
+                                    ]
+                  },
+                  {
+                      "seed":  35,
+                      "score":  1098,
+                      "level":  2,
+                      "lines":  4,
+                      "videoS":  85,
+                      "clearEvents":  3,
+                      "maxChain":  2,
+                      "clearAt":  [
+                                      31,
+                                      49.6,
+                                      54.5
+                                  ],
+                      "levelupAt":  [
+                                        49.6
+                                    ]
+                  },
+                  {
+                      "seed":  56,
+                      "score":  1212,
+                      "level":  2,
+                      "lines":  4,
+                      "videoS":  84.7,
+                      "clearEvents":  3,
+                      "maxChain":  2,
+                      "clearAt":  [
+                                      38.3,
+                                      39.3,
+                                      59.9
+                                  ],
+                      "levelupAt":  [
+                                        43.6
+                                    ]
+                  },
+                  {
+                      "seed":  8,
+                      "score":  981,
+                      "level":  2,
+                      "lines":  3,
+                      "videoS":  79.9,
+                      "clearEvents":  2,
+                      "maxChain":  2,
+                      "clearAt":  [
+                                      45.6,
+                                      61.3
+                                  ],
+                      "levelupAt":  [
+                                        45.6
+                                    ]
+                  },
+                  {
+                      "seed":  15,
+                      "score":  1289,
+                      "level":  2,
+                      "lines":  4,
+                      "videoS":  86.6,
+                      "clearEvents":  4,
+                      "maxChain":  1,
+                      "clearAt":  [
+                                      20.4,
+                                      49.3,
+                                      58.1,
+                                      59.8
+                                  ],
+                      "levelupAt":  [
+                                        47.2
+                                    ]
+                  },
+                  {
+                      "seed":  2,
+                      "score":  950,
+                      "level":  2,
+                      "lines":  3,
+                      "videoS":  77.7,
+                      "clearEvents":  3,
+                      "maxChain":  1,
+                      "clearAt":  [
+                                      18.8,
+                                      28.8,
+                                      57.1
+                                  ],
+                      "levelupAt":  [
+                                        34.3
+                                    ]
+                  },
+                  {
+                      "seed":  5,
+                      "score":  919,
+                      "level":  2,
+                      "lines":  3,
+                      "videoS":  79.4,
+                      "clearEvents":  3,
+                      "maxChain":  1,
+                      "clearAt":  [
+                                      22.6,
+                                      34.5,
+                                      48.5
+                                  ],
+                      "levelupAt":  [
+                                        40.5
+                                    ]
+                  },
+                  {
+                      "seed":  14,
+                      "score":  897,
+                      "level":  2,
+                      "lines":  3,
+                      "videoS":  77.5,
+                      "clearEvents":  3,
+                      "maxChain":  1,
+                      "clearAt":  [
+                                      47.4,
+                                      51.2,
+                                      55.3
+                                  ],
+                      "levelupAt":  [
+                                        51.2
+                                    ]
+                  },
+                  {
+                      "seed":  37,
+                      "score":  940,
+                      "level":  2,
+                      "lines":  3,
+                      "videoS":  84.9,
+                      "clearEvents":  3,
+                      "maxChain":  1,
+                      "clearAt":  [
+                                      43.5,
+                                      50,
+                                      59.2
+                                  ],
+                      "levelupAt":  [
+                                        50
+                                    ]
+                  },
+                  {
+                      "seed":  41,
+                      "score":  955,
+                      "level":  2,
+                      "lines":  3,
+                      "videoS":  82.3,
+                      "clearEvents":  3,
+                      "maxChain":  1,
+                      "clearAt":  [
+                                      43.9,
+                                      45.7,
+                                      47.4
+                                  ],
+                      "levelupAt":  [
+                                        45.7
+                                    ]
+                  },
+                  {
+                      "seed":  46,
+                      "score":  1032,
+                      "level":  2,
+                      "lines":  3,
+                      "videoS":  86,
+                      "clearEvents":  3,
+                      "maxChain":  1,
+                      "clearAt":  [
+                                      47.9,
+                                      57.4,
+                                      59.4
+                                  ],
+                      "levelupAt":  [
+                                        51.9
+                                    ]
+                  },
+                  {
+                      "seed":  48,
+                      "score":  950,
+                      "level":  2,
+                      "lines":  3,
+                      "videoS":  81,
+                      "clearEvents":  3,
+                      "maxChain":  1,
+                      "clearAt":  [
+                                      19.4,
+                                      40.3,
+                                      58
+                                  ],
+                      "levelupAt":  [
+                                        40.3
+                                    ]
+                  },
+                  {
+                      "seed":  50,
+                      "score":  954,
+                      "level":  2,
+                      "lines":  3,
+                      "videoS":  85.6,
+                      "clearEvents":  3,
+                      "maxChain":  1,
+                      "clearAt":  [
+                                      36.5,
+                                      42.5,
+                                      56.2
+                                  ],
+                      "levelupAt":  [
+                                        42.5
+                                    ]
+                  },
+                  {
+                      "seed":  51,
+                      "score":  908,
+                      "level":  2,
+                      "lines":  3,
+                      "videoS":  75.5,
+                      "clearEvents":  3,
+                      "maxChain":  1,
+                      "clearAt":  [
+                                      27.8,
+                                      47.3,
+                                      55.4
+                                  ],
+                      "levelupAt":  [
+                                        47.3
+                                    ]
+                  },
+                  {
+                      "seed":  52,
+                      "score":  1035,
+                      "level":  2,
+                      "lines":  3,
+                      "videoS":  84.3,
+                      "clearEvents":  3,
+                      "maxChain":  1,
+                      "clearAt":  [
+                                      22.8,
+                                      56.1,
+                                      60.3
+                                  ],
+                      "levelupAt":  [
+                                        52.2
+                                    ]
+                  },
+                  {
+                      "seed":  54,
+                      "score":  902,
+                      "level":  2,
+                      "lines":  3,
+                      "videoS":  81.7,
+                      "clearEvents":  3,
+                      "maxChain":  1,
+                      "clearAt":  [
+                                      38.1,
+                                      40,
+                                      46.2
+                                  ],
+                      "levelupAt":  [
+                                        40
+                                    ]
+                  },
+                  {
+                      "seed":  55,
+                      "score":  987,
+                      "level":  2,
+                      "lines":  3,
+                      "videoS":  75.1,
+                      "clearEvents":  3,
+                      "maxChain":  1,
+                      "clearAt":  [
+                                      22.7,
+                                      55.6,
+                                      57.3
+                                  ],
+                      "levelupAt":  [
+                                        51.8
+                                    ]
+                  },
+                  {
+                      "seed":  58,
+                      "score":  910,
+                      "level":  2,
+                      "lines":  3,
+                      "videoS":  84.8,
+                      "clearEvents":  3,
+                      "maxChain":  1,
+                      "clearAt":  [
+                                      17.2,
+                                      50.4,
+                                      51.4
+                                  ],
+                      "levelupAt":  [
+                                        50.4
+                                    ]
+                  },
+                  {
+                      "seed":  59,
+                      "score":  923,
+                      "level":  2,
+                      "lines":  3,
+                      "videoS":  80.9,
+                      "clearEvents":  3,
+                      "maxChain":  1,
+                      "clearAt":  [
+                                      32.2,
+                                      43.2,
+                                      60.5
+                                  ],
+                      "levelupAt":  [
+                                        43.2
+                                    ]
+                  },
+                  {
+                      "seed":  60,
+                      "score":  899,
+                      "level":  2,
+                      "lines":  3,
+                      "videoS":  76,
+                      "clearEvents":  3,
+                      "maxChain":  1,
+                      "clearAt":  [
+                                      29.8,
+                                      47.5,
+                                      54.6
+                                  ],
+                      "levelupAt":  [
+                                        47.5
+                                    ]
+                  },
+                  {
+                      "seed":  62,
+                      "score":  917,
+                      "level":  2,
+                      "lines":  3,
+                      "videoS":  80.6,
+                      "clearEvents":  3,
+                      "maxChain":  1,
+                      "clearAt":  [
+                                      18.1,
+                                      31,
+                                      49
+                                  ],
+                      "levelupAt":  [
+                                        39
+                                    ]
+                  },
+                  {
+                      "seed":  64,
+                      "score":  942,
+                      "level":  2,
+                      "lines":  3,
+                      "videoS":  81,
+                      "clearEvents":  3,
+                      "maxChain":  1,
+                      "clearAt":  [
+                                      39.8,
+                                      49.4,
+                                      58.4
+                                  ],
+                      "levelupAt":  [
+                                        49.4
+                                    ]
+                  },
+                  {
+                      "seed":  68,
+                      "score":  900,
+                      "level":  2,
+                      "lines":  3,
+                      "videoS":  78.6,
+                      "clearEvents":  3,
+                      "maxChain":  1,
+                      "clearAt":  [
+                                      33.2,
+                                      50.9,
+                                      54.7
+                                  ],
+                      "levelupAt":  [
+                                        50.9
+                                    ]
+                  },
+                  {
+                      "seed":  71,
+                      "score":  932,
+                      "level":  2,
+                      "lines":  3,
+                      "videoS":  81.3,
+                      "clearEvents":  3,
+                      "maxChain":  1,
+                      "clearAt":  [
+                                      29.1,
+                                      48.8,
+                                      54.5
+                                  ],
+                      "levelupAt":  [
+                                        48.8
+                                    ]
+                  },
+                  {
+                      "seed":  75,
+                      "score":  911,
+                      "level":  2,
+                      "lines":  3,
+                      "videoS":  79.2,
+                      "clearEvents":  3,
+                      "maxChain":  1,
+                      "clearAt":  [
+                                      24.5,
+                                      35.4,
+                                      58
+                                  ],
+                      "levelupAt":  [
+                                        38.9
+                                    ]
+                  },
+                  {
+                      "seed":  7,
+                      "score":  823,
+                      "level":  2,
+                      "lines":  2,
+                      "videoS":  82.9,
+                      "clearEvents":  2,
+                      "maxChain":  1,
+                      "clearAt":  [
+                                      45.5,
+                                      57
+                                  ],
+                      "levelupAt":  [
+                                        51.1
+                                    ]
+                  },
+                  {
+                      "seed":  12,
+                      "score":  688,
+                      "level":  2,
+                      "lines":  2,
+                      "videoS":  77.6,
+                      "clearEvents":  2,
+                      "maxChain":  1,
+                      "clearAt":  [
+                                      38.2,
+                                      50.2
+                                  ],
+                      "levelupAt":  [
+                                        50.2
+                                    ]
+                  },
+                  {
+                      "seed":  20,
+                      "score":  724,
+                      "level":  2,
+                      "lines":  2,
+                      "videoS":  77.9,
+                      "clearEvents":  2,
+                      "maxChain":  1,
+                      "clearAt":  [
+                                      31.5,
+                                      49.2
+                                  ],
+                      "levelupAt":  [
+                                        49.2
+                                    ]
+                  },
+                  {
+                      "seed":  23,
+                      "score":  755,
+                      "level":  2,
+                      "lines":  2,
+                      "videoS":  84.2,
+                      "clearEvents":  2,
+                      "maxChain":  1,
+                      "clearAt":  [
+                                      25.8,
+                                      44.4
+                                  ],
+                      "levelupAt":  [
+                                        44.4
+                                    ]
+                  },
+                  {
+                      "seed":  24,
+                      "score":  724,
+                      "level":  2,
+                      "lines":  2,
+                      "videoS":  80.2,
+                      "clearEvents":  2,
+                      "maxChain":  1,
+                      "clearAt":  [
+                                      20.3,
+                                      48.2
+                                  ],
+                      "levelupAt":  [
+                                        48.2
+                                    ]
+                  },
+                  {
+                      "seed":  27,
+                      "score":  817,
+                      "level":  2,
+                      "lines":  2,
+                      "videoS":  80.9,
+                      "clearEvents":  2,
+                      "maxChain":  1,
+                      "clearAt":  [
+                                      31.6,
+                                      56.7
+                                  ],
+                      "levelupAt":  [
+                                        52.8
+                                    ]
+                  },
+                  {
+                      "seed":  29,
+                      "score":  672,
+                      "level":  2,
+                      "lines":  2,
+                      "videoS":  76.1,
+                      "clearEvents":  2,
+                      "maxChain":  1,
+                      "clearAt":  [
+                                      21.4,
+                                      40.6
+                                  ],
+                      "levelupAt":  [
+                                        40.6
+                                    ]
+                  },
+                  {
+                      "seed":  30,
+                      "score":  715,
+                      "level":  2,
+                      "lines":  2,
+                      "videoS":  79,
+                      "clearEvents":  2,
+                      "maxChain":  1,
+                      "clearAt":  [
+                                      27,
+                                      50
+                                  ],
+                      "levelupAt":  [
+                                        50
+                                    ]
+                  },
+                  {
+                      "seed":  39,
+                      "score":  711,
+                      "level":  2,
+                      "lines":  2,
+                      "videoS":  79.2,
+                      "clearEvents":  2,
+                      "maxChain":  1,
+                      "clearAt":  [
+                                      35.7,
+                                      49.6
+                                  ],
+                      "levelupAt":  [
+                                        49.6
+                                    ]
+                  },
+                  {
+                      "seed":  40,
+                      "score":  718,
+                      "level":  2,
+                      "lines":  2,
+                      "videoS":  78.8,
+                      "clearEvents":  2,
+                      "maxChain":  1,
+                      "clearAt":  [
+                                      31.8,
+                                      43.7
+                                  ],
+                      "levelupAt":  [
+                                        43.7
+                                    ]
+                  },
+                  {
+                      "seed":  45,
+                      "score":  809,
+                      "level":  2,
+                      "lines":  2,
+                      "videoS":  78.4,
+                      "clearEvents":  2,
+                      "maxChain":  1,
+                      "clearAt":  [
+                                      29.1,
+                                      56.4
+                                  ],
+                      "levelupAt":  [
+                                        50.6
+                                    ]
+                  },
+                  {
+                      "seed":  57,
+                      "score":  772,
+                      "level":  2,
+                      "lines":  2,
+                      "videoS":  73.6,
+                      "clearEvents":  2,
+                      "maxChain":  1,
+                      "clearAt":  [
+                                      39,
+                                      54.7
+                                  ],
+                      "levelupAt":  [
+                                        48.6
+                                    ]
+                  },
+                  {
+                      "seed":  63,
+                      "score":  720,
+                      "level":  2,
+                      "lines":  2,
+                      "videoS":  76.5,
+                      "clearEvents":  2,
+                      "maxChain":  1,
+                      "clearAt":  [
+                                      25.7,
+                                      45.5
+                                  ],
+                      "levelupAt":  [
+                                        45.5
+                                    ]
+                  },
+                  {
+                      "seed":  67,
+                      "score":  659,
+                      "level":  2,
+                      "lines":  2,
+                      "videoS":  73.2,
+                      "clearEvents":  2,
+                      "maxChain":  1,
+                      "clearAt":  [
+                                      31.9,
+                                      42.2
+                                  ],
+                      "levelupAt":  [
+                                        42.2
+                                    ]
+                  },
+                  {
+                      "seed":  70,
+                      "score":  739,
+                      "level":  2,
+                      "lines":  2,
+                      "videoS":  78.7,
+                      "clearEvents":  2,
+                      "maxChain":  1,
+                      "clearAt":  [
+                                      18.3,
+                                      28.7
+                                  ],
+                      "levelupAt":  [
+                                        38.3
+                                    ]
+                  },
+                  {
+                      "seed":  72,
+                      "score":  815,
+                      "level":  2,
+                      "lines":  2,
+                      "videoS":  74.5,
+                      "clearEvents":  2,
+                      "maxChain":  1,
+                      "clearAt":  [
+                                      21.3,
+                                      55.3
+                                  ],
+                      "levelupAt":  [
+                                        48.6
+                                    ]
+                  },
+                  {
+                      "seed":  78,
+                      "score":  706,
+                      "level":  2,
+                      "lines":  2,
+                      "videoS":  76.4,
+                      "clearEvents":  2,
+                      "maxChain":  1,
+                      "clearAt":  [
+                                      35.4,
+                                      43.2
+                                  ],
+                      "levelupAt":  [
+                                        43.2
+                                    ]
+                  }
+              ]
+}

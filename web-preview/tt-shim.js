@@ -9,8 +9,10 @@
 (function () {
   'use strict';
 
-  var logicalW = Math.min(window.innerWidth, 480);
-  var logicalH = window.innerHeight;
+  // 录制/演示页可通过 window.__TT_LOGICAL_W/H 覆盖逻辑尺寸（配合 --force-device-scale-factor
+  // 得到 1080×1920 等大分辨率画布；正常预览不受影响）
+  var logicalW = window.__TT_LOGICAL_W || Math.min(window.innerWidth, 480);
+  var logicalH = window.__TT_LOGICAL_H || window.innerHeight;
   if (logicalW < 320) logicalW = 320;
   if (logicalH < 480) logicalH = 480;
 
