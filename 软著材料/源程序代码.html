@@ -1,0 +1,2686 @@
+﻿<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8">
+<title>引力方块游戏软件V1.0 源程序代码</title><style>@page { size: A4; margin: 0; }
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; color: #000; }
+body { font-family: "Microsoft YaHei", "SimSun", sans-serif; }
+.page { width: 21cm; height: 29.6cm; padding: 11mm 12mm; page-break-after: always; overflow: hidden; }
+.page:last-child { page-break-after: auto; }
+.hdr { display: flex; justify-content: space-between; font-size: 9pt; border-bottom: 1.2pt solid #000; padding-bottom: 1.5mm; margin-bottom: 2.5mm; }
+pre.code { font-family: Consolas, "Courier New", "Microsoft YaHei", monospace; font-size: 7.2pt; line-height: 10.8pt; margin: 0; white-space: pre; overflow: hidden; }</style></head><body>
+<div class="page">
+<div class="hdr"><span>引力方块游戏软件V1.0 源程序</span><span>第 1 页 / 共 51 页</span></div>
+<pre class="code">/* ======== 文件: game.js ======== */
+/**
+ * 抖音小游戏入口文件
+ * game.json 中约定入口为 game.js
+ */
+// ⚠️ 侧边栏复访官方指南要求：必须在 game.js 运行时机「同步」注册 tt.onShow 监听，
+// 注册过晚会收不到从侧边栏复访进入的启动回调，导致用户无法领取奖励。
+const platform = require(&#39;./js/platform.js&#39;);
+platform.init();
+
+const Main = require(&#39;./js/main.js&#39;);
+
+const main = new Main();
+
+// 浏览器预览/演示环境暴露实例（抖音环境无 window，自动跳过）
+if (typeof window !== &#39;undefined&#39;) window.__game = main;
+/* ======== 文件: js/config.js ======== */
+/**
+ * 全局配置常量
+ * 引力方块：20x20 方形棋盘，方块从中心生成，重力方向随机（下/左/上/右）
+ */
+
+// 重力方向单位向量：0=下 1=左 2=上 3=右
+const DIRS = [
+  { x: 0, y: 1, name: &#39;down&#39;, label: &#39;↓&#39; },
+  { x: -1, y: 0, name: &#39;left&#39;, label: &#39;←&#39; },
+  { x: 0, y: -1, name: &#39;up&#39;, label: &#39;↑&#39; },
+  { x: 1, y: 0, name: &#39;right&#39;, label: &#39;→&#39; },
+];
+
+// 每个重力方向对应的“横向移动”轴（与重力垂直）
+// 重力向下/上时，横向 = x 轴；重力向左/右时，横向 = y 轴
+const PERP = [
+  { x: 1, y: 0 },  // 重力向下：横向为屏幕左右
+  { x: 0, y: 1 },  // 重力向左：横向为屏幕上下
+  { x: 1, y: 0 },  // 重力向上：横向为屏幕左右
+  { x: 0, y: 1 },  // 重力向右：横向为屏幕上下
+];
+
+// 七种方块的颜色
+const COLORS = {
+  I: &#39;#00e5ff&#39;,
+  O: &#39;#ffd500&#39;,
+  T: &#39;#b388ff&#39;,
+  S: &#39;#69f0ae&#39;,
+  Z: &#39;#ff5252&#39;,
+  J: &#39;#448aff&#39;,
+  L: &#39;#ffab40&#39;,
+};
+</pre>
+</div>
+<div class="page">
+<div class="hdr"><span>引力方块游戏软件V1.0 源程序</span><span>第 2 页 / 共 51 页</span></div>
+<pre class="code">/* ================= 平台能力配置 =================
+ * 对应审核检测的五项能力：侧边栏复访 / 添加到桌面 / 订阅消息 / 广告 / 内购。
+ * 所有标 TODO 的 ID 必须替换为「抖音开放平台开发者后台」中创建的真实 ID，
+ * 否则对应能力在真机上会走失败回调（已做守卫降级，不影响游戏运行）。
+ */
+const PLATFORM = {
+  /* ---- 广告：后台「流量主」→「广告位管理」创建后替换 ---- */
+  REWARDED_AD_UNIT_ID: &#39;d9tbmu1k2kk5ehnpvl&#39;,     // TODO: 替换为你的激励视频广告位 ID
+  INTERSTITIAL_AD_UNIT_ID: &#39;e7fm9np9lsu7694n9q&#39;, // TODO: 替换为你的插屏广告位 ID
+  INTERSTITIAL_MIN_INTERVAL: 90000,              // 两次插屏的最小间隔（ms），防打扰
+
+  /* ---- 订阅消息：后台「功能」→「订阅消息」选用模板后替换 ---- */
+  SUBSCRIBE_TMPL_IDS: [&#39;REPLACE_WITH_TMPL_ID&#39;],  // TODO: 替换为订阅消息模板 ID（可多个）
+
+  /* ---- 内购：需游戏版号并在后台开通内购能力后才可开启 ---- */
+  // 默认 false：内购调用代码已接入（js/platform.js），但购买入口隐藏，
+  // 避免在无版号时触发「未获资质开通虚拟支付」的审核风险。拿到版号后改为 true。
+  ENABLE_IAP: false,
+  IAP: {
+    productId: &#39;coins_100&#39;, // TODO: 后台配置的内购道具 ID
+    priceFen: 100,          // 道具价格（单位：分）
+    coins: 100,             // 到账金币数
+    zoneId: &#39;1&#39;,            // 游戏分区
+  },
+
+  /* ---- 金币经济（复活 / 奖励发放与消耗） ---- */
+  WELCOME_COINS: 30,        // 新玩家赠送金币（足够一次金币复活，保证复活链路可用）
+  REVIVE_COIN_COST: 30,     // 金币复活消耗
+  AD_REWARD_COINS: 50,      // 完整观看一次激励视频的金币奖励
+  SIDEBAR_REWARD_COINS: 60, // 从抖音首页侧边栏进入游戏后可领取（每日一次）
+};
+
+module.exports = {
+  COLS: 20,
+  ROWS: 20,
+  TYPES: [&#39;I&#39;, &#39;O&#39;, &#39;T&#39;, &#39;S&#39;, &#39;Z&#39;, &#39;J&#39;, &#39;L&#39;],
+  DIRS,
+  PERP,
+  COLORS,
+
+  // 下落前提示（方块类型 + 方向）的停留时间
+  HINT_BASE: 1000,   // 第 1 关提示时长 ms
+  HINT_MIN: 500,     // 提示时长下限 ms
+  HINT_STEP: 50,     // 每升 1 关减少 ms
+
+  // 下落速度（每格间隔）— 20&#215;20 棋盘下落距离翻倍，间隔减半以保持节奏与原 10&#215;10 相当
+  FALL_BASE: 500,    // 第 1 关每格 ms
+  FALL_MIN: 80,      // 速度上限（最快每格 80ms）
+  FALL_STEP: 40,     // 每升 1 关加快 ms
+</pre>
+</div>
+<div class="page">
+<div class="hdr"><span>引力方块游戏软件V1.0 源程序</span><span>第 3 页 / 共 51 页</span></div>
+<pre class="code">  LINES_PER_LEVEL: 8,        // 每消除 8 行升 1 关
+  SCORE_TABLE: [0, 100, 250, 500, 800], // 同时消除 1/2/3/4 行的基础分
+  SCORE_EXTRA: 200,          // 超过 4 行后每多 1 行的附加基础分
+  SOFT_DROP_SCORE: 1,        // 自然下落每格 +1
+  HARD_DROP_SCORE: 2,        // 快速降落每格 +2
+
+  // 视觉
+  ACCENT: &#39;#ff4d6d&#39;,
+  BG_TOP: &#39;#0f1220&#39;,
+  BG_BOTTOM: &#39;#1c2140&#39;,
+  BOARD_SCALE: 1.0,          // 棋盘整体缩放（方块大小）：20&#215;20 下单格已约为 10&#215;10 时的一半；调小可进一步缩小方块
+
+  // 平台能力（审核检测项）配置
+  PLATFORM,
+};
+/* ======== 文件: js/tetromino.js ======== */
+/**
+ * 方块（Tetromino）定义与旋转，纯逻辑，可在 Node 中测试
+ */
+
+// 标准 7 种方块，使用正方形矩阵便于旋转
+const SHAPES = {
+  I: [
+    [0, 0, 0, 0],
+    [1, 1, 1, 1],
+    [0, 0, 0, 0],
+    [0, 0, 0, 0],
+  ],
+  O: [
+    [1, 1],
+    [1, 1],
+  ],
+  T: [
+    [0, 1, 0],
+    [1, 1, 1],
+    [0, 0, 0],
+  ],
+  S: [
+    [0, 1, 1],
+    [1, 1, 0],
+    [0, 0, 0],
+  ],
+  Z: [
+    [1, 1, 0],
+    [0, 1, 1],
+    [0, 0, 0],
+  ],
+  J: [
+    [1, 0, 0],
+    [1, 1, 1],</pre>
+</div>
+<div class="page">
+<div class="hdr"><span>引力方块游戏软件V1.0 源程序</span><span>第 4 页 / 共 51 页</span></div>
+<pre class="code">    [0, 0, 0],
+  ],
+  L: [
+    [0, 0, 1],
+    [1, 1, 1],
+    [0, 0, 0],
+  ],
+};
+
+/** 顺时针旋转一个正方形矩阵 */
+function rotateCW(m) {
+  const n = m.length;
+  const out = [];
+  for (let r = 0; r &lt; n; r++) {
+    out.push([]);
+    for (let c = 0; c &lt; n; c++) {
+      out[r][c] = m[n - 1 - c][r];
+    }
+  }
+  return out;
+}
+
+/** 提取矩阵中所有实体格子的局部坐标 [{x:列, y:行}] */
+function cellsOf(m) {
+  const cells = [];
+  for (let r = 0; r &lt; m.length; r++) {
+    for (let c = 0; c &lt; m[r].length; c++) {
+      if (m[r][c]) cells.push({ x: c, y: r });
+    }
+  }
+  return cells;
+}
+
+/** 复制矩阵 */
+function cloneMatrix(m) {
+  return m.map((row) =&gt; row.slice());
+}
+
+module.exports = { SHAPES, rotateCW, cellsOf, cloneMatrix };
+/* ======== 文件: js/board.js ======== */
+/**
+ * 棋盘（网格）逻辑，纯逻辑，可在 Node 中测试
+ * grid[y][x] 为 null（空）或方块类型字母（已固定）
+ */
+
+class Board {
+  constructor(cols, rows) {
+    this.cols = cols;
+    this.rows = rows;
+    this.grid = [];</pre>
+</div>
+<div class="page">
+<div class="hdr"><span>引力方块游戏软件V1.0 源程序</span><span>第 5 页 / 共 51 页</span></div>
+<pre class="code">    this.reset();
+  }
+
+  reset() {
+    this.grid = [];
+    for (let r = 0; r &lt; this.rows; r++) {
+      this.grid.push(new Array(this.cols).fill(null));
+    }
+  }
+
+  inside(x, y) {
+    return x &gt;= 0 &amp;&amp; x &lt; this.cols &amp;&amp; y &gt;= 0 &amp;&amp; y &lt; this.rows;
+  }
+
+  occupied(x, y) {
+    return !!this.grid[y][x];
+  }
+
+  /** 一组绝对坐标是否与边界或已固定格子冲突 */
+  collides(cells) {
+    for (let i = 0; i &lt; cells.length; i++) {
+      const c = cells[i];
+      if (!this.inside(c.x, c.y)) return true;
+      if (this.grid[c.y][c.x]) return true;
+    }
+    return false;
+  }
+
+  /** 把一组绝对坐标固定到棋盘上 */
+  lock(cells, type) {
+    for (let i = 0; i &lt; cells.length; i++) {
+      const c = cells[i];
+      if (this.inside(c.x, c.y)) this.grid[c.y][c.x] = type;
+    }
+  }
+
+  fullRow(r) {
+    for (let c = 0; c &lt; this.cols; c++) {
+      if (!this.grid[r][c]) return false;
+    }
+    return true;
+  }
+
+  fullCol(c) {
+    for (let r = 0; r &lt; this.rows; r++) {
+      if (!this.grid[r][c]) return false;
+    }
+    return true;
+  }
+</pre>
+</div>
+<div class="page">
+<div class="hdr"><span>引力方块游戏软件V1.0 源程序</span><span>第 6 页 / 共 51 页</span></div>
+<pre class="code">  /**
+   * 消除所有被填满的行与列（四向重力下两个方向都可消除）
+   * 返回 { rowCount, colCount, count, cells }，cells 为被消除格子（去重）
+   */
+  clearLines() {
+    const rows = [];
+    const cols = [];
+    for (let r = 0; r &lt; this.rows; r++) if (this.fullRow(r)) rows.push(r);
+    for (let c = 0; c &lt; this.cols; c++) if (this.fullCol(c)) cols.push(c);
+
+    const seen = {};
+    const cells = [];
+    const add = (x, y) =&gt; {
+      const key = x + &#39;,&#39; + y;
+      if (!seen[key]) {
+        seen[key] = true;
+        cells.push({ x, y });
+      }
+    };
+    rows.forEach((r) =&gt; {
+      for (let c = 0; c &lt; this.cols; c++) add(c, r);
+    });
+    cols.forEach((c) =&gt; {
+      for (let r = 0; r &lt; this.rows; r++) add(c, r);
+    });
+    cells.forEach((p) =&gt; {
+      this.grid[p.y][p.x] = null;
+    });
+
+    return { rowCount: rows.length, colCount: cols.length, count: rows.length + cols.length, cells };
+  }
+
+  /**
+   * 重力沉降：每列的已固定格子整体向下落底，填满列内空洞（保持上下相对顺序）。
+   * 用于消除后让剩余方块下沉，保证列内不再悬空、堆叠不会从中间裂开。
+   * 返回 { moved, moves }：moved 为发生移动的格子数，
+   * moves 为 [{x, fromY, toY, type}]（仅含实际移动的格子）。
+   */
+  settle() {
+    let moved = 0;
+    const moves = [];
+    for (let c = 0; c &lt; this.cols; c++) {
+      let write = this.rows - 1; // 下一个实体格应落的行（自底向上）
+      for (let r = this.rows - 1; r &gt;= 0; r--) {
+        const v = this.grid[r][c];
+        if (!v) continue;
+        if (write !== r) {
+          this.grid[write][c] = v;
+          this.grid[r][c] = null;
+          moved++;</pre>
+</div>
+<div class="page">
+<div class="hdr"><span>引力方块游戏软件V1.0 源程序</span><span>第 7 页 / 共 51 页</span></div>
+<pre class="code">          moves.push({ x: c, fromY: r, toY: write, type: v });
+        }
+        write--;
+      }
+    }
+    return { moved, moves };
+  }
+}
+
+module.exports = Board;
+/* ======== 文件: js/gamecore.js ======== */
+/**
+ * 游戏核心逻辑（纯 JS，无平台依赖，可在 Node 中单元测试）
+ *
+ * 相位机：idle → hint(下落前提示) → fall(下落中) → 锁定/消行+沉降 → 生成下一个
+ * 方块从棋盘中心生成，重力方向随机（下/左/上/右），填满整行或整列即消除。
+ * 消除后场上剩余方块整体下沉落底（每列向下压实），下沉凑齐的新行列连锁消除。
+ */
+const {
+  COLS, ROWS, DIRS, PERP, TYPES,
+  HINT_BASE, HINT_MIN, HINT_STEP,
+  FALL_BASE, FALL_MIN, FALL_STEP,
+  LINES_PER_LEVEL, SCORE_TABLE, SCORE_EXTRA,
+  SOFT_DROP_SCORE, HARD_DROP_SCORE,
+} = require(&#39;./config.js&#39;);
+const { SHAPES, rotateCW, cellsOf, cloneMatrix } = require(&#39;./tetromino.js&#39;);
+const Board = require(&#39;./board.js&#39;);
+
+// 旋转时依次尝试的踢墙偏移
+const KICKS = [
+  { x: 0, y: 0 }, { x: -1, y: 0 }, { x: 1, y: 0 },
+  { x: 0, y: -1 }, { x: 0, y: 1 },
+  { x: -2, y: 0 }, { x: 2, y: 0 }, { x: 0, y: -2 }, { x: 0, y: 2 },
+];
+
+class GameCore {
+  constructor(opts) {
+    opts = opts || {};
+    this.rng = opts.rng || Math.random; // 可注入随机源，便于测试
+    this.events = [];                   // 事件队列：lock / clear / levelup / gameover
+    this.board = new Board(COLS, ROWS);
+    this.reset();
+  }
+
+  reset() {
+    this.board.reset();
+    this.score = 0;
+    this.level = 1;
+    this.lines = 0;
+    this.gameOver = false;</pre>
+</div>
+<div class="page">
+<div class="hdr"><span>引力方块游戏软件V1.0 源程序</span><span>第 8 页 / 共 51 页</span></div>
+<pre class="code">    this.bag = [];
+    this.next = this._drawNext();
+    this.current = null;
+    this.phase = &#39;idle&#39;;
+    this.hintTimer = 0;
+    this.fallTimer = 0;
+    this.spawn();
+  }
+
+  /* ---------- 随机出块：7-bag（每 7 个一块袋，袋内洗牌） ---------- */
+
+  _drawType() {
+    if (this.bag.length === 0) {
+      this.bag = TYPES.slice();
+      for (let i = this.bag.length - 1; i &gt; 0; i--) {
+        const j = Math.floor(this.rng() * (i + 1));
+        const t = this.bag[i];
+        this.bag[i] = this.bag[j];
+        this.bag[j] = t;
+      }
+    }
+    return this.bag.pop();
+  }
+
+  _drawNext() {
+    return { type: this._drawType(), dir: Math.floor(this.rng() * 4) };
+  }
+
+  /* ---------- 关卡参数 ---------- */
+
+  hintTime() {
+    return Math.max(HINT_MIN, HINT_BASE - (this.level - 1) * HINT_STEP);
+  }
+
+  fallInterval() {
+    return Math.max(FALL_MIN, FALL_BASE - (this.level - 1) * FALL_STEP);
+  }
+
+  /* ---------- 坐标换算 ---------- */
+
+  /** 某个方块占据的绝对格子坐标 */
+  cells(piece) {
+    piece = piece || this.current;
+    if (!piece) return [];
+    const local = cellsOf(piece.matrix);
+    const out = [];
+    for (let i = 0; i &lt; local.length; i++) {
+      out.push({ x: local[i].x + piece.x, y: local[i].y + piece.y });
+    }
+    return out;</pre>
+</div>
+<div class="page">
+<div class="hdr"><span>引力方块游戏软件V1.0 源程序</span><span>第 9 页 / 共 51 页</span></div>
+<pre class="code">  }
+
+  /** 当前方块沿重力方向的落点（幽灵方块） */
+  ghostCells() {
+    if (!this.current) return [];
+    const d = DIRS[this.current.dir];
+    let gx = this.current.x;
+    let gy = this.current.y;
+    for (;;) {
+      const cand = this._moved(this.current, d.x, d.y);
+      cand.x = gx + d.x;
+      cand.y = gy + d.y;
+      if (this.board.collides(this.cells(cand))) break;
+      gx = cand.x;
+      gy = cand.y;
+    }
+    const local = cellsOf(this.current.matrix);
+    const out = [];
+    for (let i = 0; i &lt; local.length; i++) out.push({ x: local[i].x + gx, y: local[i].y + gy });
+    return out;
+  }
+
+  _moved(piece, dx, dy, matrix) {
+    return {
+      type: piece.type,
+      matrix: matrix || piece.matrix,
+      dir: piece.dir,
+      x: piece.x + dx,
+      y: piece.y + dy,
+    };
+  }
+
+  /* ---------- 生成与相位 ---------- */
+
+  spawn() {
+    const n = this.next;
+    this.next = this._drawNext();
+    const matrix = cloneMatrix(SHAPES[n.type]);
+    const piece = {
+      type: n.type,
+      matrix,
+      dir: n.dir,
+      // 棋盘中心生成
+      x: Math.floor((COLS - matrix.length) / 2),
+      y: Math.floor((ROWS - matrix.length) / 2),
+    };
+    if (this.board.collides(this.cells(piece))) {
+      // 中心被堵住 → 游戏结束
+      this.current = piece;
+      this.phase = &#39;over&#39;;</pre>
+</div>
+<div class="page">
+<div class="hdr"><span>引力方块游戏软件V1.0 源程序</span><span>第 10 页 / 共 51 页</span></div>
+<pre class="code">      this.gameOver = true;
+      this.events.push({ type: &#39;gameover&#39; });
+      return;
+    }
+    this.current = piece;
+    this.phase = &#39;hint&#39;;
+    this.hintTimer = this.hintTime();
+    this.fallTimer = 0;
+  }
+
+  canControl() {
+    return !this.gameOver &amp;&amp; !!this.current &amp;&amp; (this.phase === &#39;hint&#39; || this.phase === &#39;fall&#39;);
+  }
+
+  /** 主循环驱动：dt 为毫秒 */
+  update(dt) {
+    if (this.gameOver || !this.current) return;
+    if (this.phase === &#39;hint&#39;) {
+      this.hintTimer -= dt;
+      if (this.hintTimer &lt;= 0) this.phase = &#39;fall&#39;;
+      return;
+    }
+    if (this.phase === &#39;fall&#39;) {
+      this.fallTimer += dt;
+      const iv = this.fallInterval();
+      let guard = 0;
+      while (this.fallTimer &gt;= iv &amp;&amp; guard++ &lt; 64) {
+        this.fallTimer -= iv;
+        if (!this._stepGravity(true)) break; // 落底锁定
+      }
+    }
+  }
+
+  /** 沿重力方向前进一格；无法前进则锁定。返回是否移动成功 */
+  _stepGravity(withSoftScore) {
+    const d = DIRS[this.current.dir];
+    const moved = this._moved(this.current, d.x, d.y);
+    if (this.board.collides(this.cells(moved))) {
+      this._lock();
+      return false;
+    }
+    this.current = moved;
+    if (withSoftScore) this.score += SOFT_DROP_SCORE;
+    return true;
+  }
+
+  /* ---------- 玩家操作 ---------- */
+
+  /** 沿与重力垂直的轴移动，sign = -1 / +1 */
+  movePerp(sign) {</pre>
+</div>
+<div class="page">
+<div class="hdr"><span>引力方块游戏软件V1.0 源程序</span><span>第 11 页 / 共 51 页</span></div>
+<pre class="code">    if (!this.canControl()) return false;
+    const p = PERP[this.current.dir];
+    const moved = this._moved(this.current, p.x * sign, p.y * sign);
+    if (this.board.collides(this.cells(moved))) return false;
+    this.current = moved;
+    return true;
+  }
+
+  /** 顺时针旋转（带踢墙） */
+  rotate() {
+    if (!this.canControl()) return false;
+    if (this.current.type === &#39;O&#39;) return true; // O 旋转无意义
+    const m = rotateCW(this.current.matrix);
+    for (let i = 0; i &lt; KICKS.length; i++) {
+      const cand = this._moved(this.current, KICKS[i].x, KICKS[i].y, m);
+      if (!this.board.collides(this.cells(cand))) {
+        this.current = cand;
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** 快速降落：沿重力方向直接落底锁定 */
+  hardDrop() {
+    if (!this.canControl()) return;
+    this.phase = &#39;fall&#39;;
+    let dist = 0;
+    while (this._stepGravity(false)) dist++;
+    this.score += dist * HARD_DROP_SCORE;
+  }
+
+  /* ---------- 锁定 / 消行 / 升级 ---------- */
+
+  _lock() {
+    const cells = this.cells(this.current);
+    this.board.lock(cells, this.current.type);
+    this.events.push({ type: &#39;lock&#39;, cells: cells.slice() });
+
+    const cleared = this.board.clearLines();
+    if (cleared.count &gt; 0) {
+      // 消除 → 沉降 循环：消除后剩余方块整体下沉（每列向下压实，不再悬空）；
+      // 下沉可能凑齐新的整行/整列 → 继续消除并沉降，直到稳定（连锁消除合并计数）
+      let count = cleared.count;
+      const allCells = cleared.cells.slice();
+      let settledMoved = 0;
+      for (;;) {
+        const settled = this.board.settle();
+        settledMoved += settled.moved;
+        const next = this.board.clearLines();</pre>
+</div>
+<div class="page">
+<div class="hdr"><span>引力方块游戏软件V1.0 源程序</span><span>第 12 页 / 共 51 页</span></div>
+<pre class="code">        if (next.count === 0) break;
+        count += next.count;
+        for (let i = 0; i &lt; next.cells.length; i++) allCells.push(next.cells[i]);
+      }
+
+      let base = SCORE_TABLE[Math.min(count, 4)];
+      if (count &gt; 4) base += (count - 4) * SCORE_EXTRA;
+      this.score += base * this.level;
+      this.lines += count;
+      this.events.push({ type: &#39;clear&#39;, cells: allCells, count, settled: settledMoved });
+
+      const newLevel = Math.floor(this.lines / LINES_PER_LEVEL) + 1;
+      if (newLevel &gt; this.level) {
+        this.level = newLevel;
+        this.events.push({ type: &#39;levelup&#39;, level: this.level });
+      }
+    }
+
+    this.current = null;
+    this.phase = &#39;idle&#39;;
+    this.spawn(); // 生成下一个（可能触发 gameover）
+  }
+
+  /**
+   * 复活：清空棋盘并重新出块（保留分数/关卡/行数）。
+   * 仅在游戏结束后可调用一次；返回是否复活成功。
+   * 供「看激励视频复活 / 金币复活」使用（见 main.js tryRevive）。
+   */
+  revive() {
+    if (!this.gameOver) return false;
+    this.board.reset();
+    this.events.length = 0; // 丢弃残留事件（含 gameover）
+    this.gameOver = false;
+    this.bag = [];
+    this.next = this._drawNext();
+    this.current = null;
+    this.phase = &#39;idle&#39;;
+    this.hintTimer = 0;
+    this.fallTimer = 0;
+    this.spawn();
+    return !this.gameOver;
+  }
+
+  /** 取走并清空事件队列 */
+  drainEvents() {
+    const ev = this.events;
+    this.events = [];
+    return ev;
+  }
+}</pre>
+</div>
+<div class="page">
+<div class="hdr"><span>引力方块游戏软件V1.0 源程序</span><span>第 13 页 / 共 51 页</span></div>
+<pre class="code">
+module.exports = GameCore;
+/* ======== 文件: js/render.js ======== */
+/**
+ * 渲染模块：全部 Canvas 2D 绘制逻辑
+ * 场景：menu / playing / paused / gameover / rank / help
+ */
+const {
+  COLS, ROWS, DIRS, PERP, COLORS, ACCENT, BG_TOP, BG_BOTTOM, BOARD_SCALE, PLATFORM,
+} = require(&#39;./config.js&#39;);
+const { SHAPES, cellsOf } = require(&#39;./tetromino.js&#39;);
+
+/* ================= 布局 ================= */
+
+function buildLayout(w, h) {
+  const s = Math.max(0.66, Math.min(1.25, Math.min(w / 375, h / 700)));
+
+  const hud = { x: 12 * s, y: 10 * s, w: w - 24 * s, h: 52 * s };
+  const pauseBtn = { x: w - 54 * s, y: 16 * s, w: 40 * s, h: 40 * s };
+  const nextBox = { x: 12 * s, y: 68 * s, w: 128 * s, h: 64 * s };
+  const gravBox = { x: 148 * s, y: 68 * s, w: w - 160 * s, h: 64 * s };
+
+  // 棋盘：正方形，尽量大
+  const reserved = 322 * s; // HUD + 提示行 + 控制区
+  let bs = Math.min(w - 24 * s, h - reserved, h * 0.56);
+  bs = Math.max(bs, Math.min(180, w - 24 * s));
+  bs *= BOARD_SCALE; // 整体缩放棋盘：方块更小，四周留白更多
+  let by = 142 * s;
+  const slack = h - 96 * s - bs - by;
+  if (slack &gt; 0) by += slack * 0.3;
+  const board = { x: (w - bs) / 2, y: by, size: bs, cell: bs / COLS };
+
+  // 底部控制按钮
+  const btnSize = Math.min(64 * s, (w - 40 * s) / 4.6);
+  const cy = h - 92 * s;
+  const xs = [w * 0.14, w * 0.38, w * 0.62, w * 0.86];
+  const controls = {
+    left: { x: xs[0] - btnSize / 2, y: cy, w: btnSize, h: btnSize },
+    rotate: { x: xs[1] - btnSize / 2, y: cy, w: btnSize, h: btnSize },
+    drop: { x: xs[2] - btnSize / 2, y: cy, w: btnSize, h: btnSize },
+    right: { x: xs[3] - btnSize / 2, y: cy, w: btnSize, h: btnSize },
+  };
+
+  // 排行榜页好友区域
+  const rankArea = { x: 16 * s, y: 104 * s, w: w - 32 * s, h: Math.min(280 * s, h * 0.38) };
+
+  return { w, h, s, hud, pauseBtn, nextBox, gravBox, board, controls, rankArea };
+}
+
+/* ================= 按钮定义（绘制 + 命中检测共用） ================= */</pre>
+</div>
+<div class="page">
+<div class="hdr"><span>引力方块游戏软件V1.0 源程序</span><span>第 14 页 / 共 51 页</span></div>
+<pre class="code">
+function mk(id, r, extra) {
+  const b = { id: id, x: r.x, y: r.y, w: r.w, h: r.h };
+  if (extra) for (const k in extra) b[k] = extra[k];
+  return b;
+}
+
+/**
+ * 场景按钮定义（绘制 + 命中检测共用）
+ * @param opts {canRevive, sidebarSupported, sidebarClaimable} 由 main.sceneOpts() 提供
+ */
+function sceneButtons(scene, L, opts) {
+  opts = opts || {};
+  const s = L.s, w = L.w, h = L.h;
+  const out = [];
+  if (scene === &#39;menu&#39;) {
+    const bw = 220 * s, bh = 56 * s, bx = (w - bw) / 2;
+    let y = h * 0.50;
+    out.push(mk(&#39;start&#39;, { x: bx, y: y, w: bw, h: bh }, { text: &#39;开始游戏&#39;, primary: true }));
+    y += bh + 12 * s;
+    out.push(mk(&#39;rank&#39;, { x: bx, y: y, w: bw, h: 48 * s }, { text: &#39;排行榜&#39; }));
+    y += 48 * s + 12 * s;
+    out.push(mk(&#39;help&#39;, { x: bx, y: y, w: bw, h: 48 * s }, { text: &#39;玩法说明&#39; }));
+    y += 48 * s + 12 * s;
+    // 侧边栏复访奖励入口（必接能力；宿主明确不支持时隐藏）
+    if (opts.sidebarSupported !== false) {
+      out.push(mk(&#39;sidebarGift&#39;, { x: bx, y: y, w: bw, h: 44 * s }, {
+        text: opts.sidebarClaimable ? &#39;侧边栏奖励 &#183; 可领取&#39; : &#39;侧边栏奖励&#39;,
+        primary: !!opts.sidebarClaimable,
+      }));
+      y += 44 * s + 12 * s;
+    }
+    // 平台能力小按钮行：添加到桌面 / 订阅提醒 / 免费金币（看激励视频）
+    const gap = 6 * s;
+    const sw = (bw - gap * 2) / 3;
+    const sh = 36 * s;
+    out.push(mk(&#39;desktop&#39;, { x: bx, y: y, w: sw, h: sh }, { text: &#39;添加到桌面&#39;, small2: true }));
+    out.push(mk(&#39;subscribe&#39;, { x: bx + sw + gap, y: y, w: sw, h: sh }, { text: &#39;订阅提醒&#39;, small2: true }));
+    out.push(mk(&#39;freeCoins&#39;, { x: bx + (sw + gap) * 2, y: y, w: sw, h: sh }, { text: &#39;免费金币&#39;, small2: true }));
+  } else if (scene === &#39;playing&#39; || scene === &#39;paused&#39;) {
+    const c = L.controls;
+    out.push(mk(&#39;left&#39;, c.left, { glyph: &#39;perp&#39;, sign: -1 }));
+    out.push(mk(&#39;rotate&#39;, c.rotate, { text: &#39;旋转&#39;, small: true }));
+    out.push(mk(&#39;drop&#39;, c.drop, { glyph: &#39;drop&#39; }));
+    out.push(mk(&#39;right&#39;, c.right, { glyph: &#39;perp&#39;, sign: 1 }));
+    out.push(mk(&#39;pause&#39;, L.pauseBtn, { glyph: &#39;pause&#39; }));
+    if (scene === &#39;paused&#39;) {
+      const bw = 200 * s, bh = 50 * s, bx = (w - bw) / 2, py = h * 0.42;
+      out.push(mk(&#39;resume&#39;, { x: bx, y: py, w: bw, h: bh }, { text: &#39;继续游戏&#39;, primary: true }));
+      out.push(mk(&#39;restart&#39;, { x: bx, y: py + (bh + 14 * s), w: bw, h: bh }, { text: &#39;重新开始&#39; }));</pre>
+</div>
+<div class="page">
+<div class="hdr"><span>引力方块游戏软件V1.0 源程序</span><span>第 15 页 / 共 51 页</span></div>
+<pre class="code">      out.push(mk(&#39;tomenu&#39;, { x: bx, y: py + (bh + 14 * s) * 2, w: bw, h: bh }, { text: &#39;返回主页&#39; }));
+    }
+  } else if (scene === &#39;gameover&#39;) {
+    const bw = 220 * s, bh = 50 * s, bx = (w - bw) / 2;
+    let y = opts.canRevive ? h * 0.42 : h * 0.47;
+    if (opts.canRevive) {
+      // 复活按钮（看激励视频 / 金币复活，见 main.tryRevive），每局限一次
+      out.push(mk(&#39;revive&#39;, { x: bx, y: y, w: bw, h: bh }, { text: &#39;复活继续&#39;, primary: true }));
+      y += bh + 14 * s;
+      out.push(mk(&#39;retry&#39;, { x: bx, y: y, w: bw, h: bh }, { text: &#39;再来一局&#39; }));
+    } else {
+      out.push(mk(&#39;retry&#39;, { x: bx, y: y, w: bw, h: bh }, { text: &#39;再来一局&#39;, primary: true }));
+    }
+    y += bh + 14 * s;
+    out.push(mk(&#39;rank&#39;, { x: bx, y: y, w: bw, h: bh }, { text: &#39;排行榜&#39; }));
+    y += bh + 14 * s;
+    out.push(mk(&#39;share&#39;, { x: bx, y: y, w: bw, h: bh }, { text: &#39;分享给好友&#39; }));
+    y += bh + 14 * s;
+    out.push(mk(&#39;tomenu&#39;, { x: bx, y: y, w: bw, h: bh }, { text: &#39;返回主页&#39; }));
+  } else if (scene === &#39;rank&#39; || scene === &#39;help&#39;) {
+    const bw = 160 * s, bh = 46 * s;
+    out.push(mk(&#39;back&#39;, { x: (w - bw) / 2, y: h - 78 * s, w: bw, h: bh }, { text: &#39;返回&#39; }));
+  } else if (scene === &#39;sidebar&#39;) {
+    // 侧边栏复访任务面板：去侧边栏 / 领取奖励
+    const bw = 220 * s, bh = 50 * s, bx = (w - bw) / 2;
+    out.push(mk(&#39;sidebarAction&#39;, { x: bx, y: h * 0.565, w: bw, h: bh }, {
+      text: opts.sidebarClaimable ? &#39;立即领奖&#39; : &#39;去首页侧边栏&#39;,
+      primary: true,
+    }));
+    const cw = 160 * s;
+    out.push(mk(&#39;sidebarClose&#39;, { x: (w - cw) / 2, y: h * 0.645, w: cw, h: 44 * s }, { text: &#39;关闭&#39; }));
+  }
+  return out;
+}
+
+/* ================= 绘制小工具 ================= */
+
+function roundRect(ctx, x, y, w, h, r) {
+  if (w &lt; 2 || h &lt; 2) return;
+  r = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+function drawTriangle(ctx, cx, cy, dx, dy, size, color) {</pre>
+</div>
+<div class="page">
+<div class="hdr"><span>引力方块游戏软件V1.0 源程序</span><span>第 16 页 / 共 51 页</span></div>
+<pre class="code">  const nx = -dy, ny = dx;
+  ctx.beginPath();
+  ctx.moveTo(cx + dx * size * 0.6, cy + dy * size * 0.6);
+  ctx.lineTo(cx - dx * size * 0.4 + nx * size * 0.5, cy - dy * size * 0.4 + ny * size * 0.5);
+  ctx.lineTo(cx - dx * size * 0.4 - nx * size * 0.5, cy - dy * size * 0.4 - ny * size * 0.5);
+  ctx.closePath();
+  ctx.fillStyle = color;
+  ctx.fill();
+}
+
+function text(ctx, str, x, y, size, color, align, bold, alpha) {
+  ctx.save();
+  ctx.font = (bold ? &#39;bold &#39; : &#39;&#39;) + size + &#39;px sans-serif&#39;;
+  ctx.fillStyle = color || &#39;#ffffff&#39;;
+  ctx.textAlign = align || &#39;left&#39;;
+  ctx.textBaseline = &#39;alphabetic&#39;;
+  if (alpha !== undefined) ctx.globalAlpha = alpha;
+  ctx.fillText(str, x, y);
+  ctx.restore();
+}
+
+/** 以 (cx,cy) 为中心绘制方块小图（按实体格包围盒居中） */
+function drawMiniShape(ctx, type, cx, cy, cell, alpha) {
+  const m = SHAPES[type];
+  const cs = cellsOf(m);
+  let minX = 99, maxX = -99, minY = 99, maxY = -99;
+  for (let i = 0; i &lt; cs.length; i++) {
+    if (cs[i].x &lt; minX) minX = cs[i].x;
+    if (cs[i].x &gt; maxX) maxX = cs[i].x;
+    if (cs[i].y &lt; minY) minY = cs[i].y;
+    if (cs[i].y &gt; maxY) maxY = cs[i].y;
+  }
+  const bw = (maxX - minX + 1) * cell;
+  const bh = (maxY - minY + 1) * cell;
+  const ox = cx - bw / 2 - minX * cell;
+  const oy = cy - bh / 2 - minY * cell;
+  ctx.save();
+  ctx.globalAlpha = alpha === undefined ? 1 : alpha;
+  for (let i = 0; i &lt; cs.length; i++) {
+    const px = ox + cs[i].x * cell;
+    const py = oy + cs[i].y * cell;
+    roundRect(ctx, px + 1, py + 1, cell - 2, cell - 2, cell * 0.22);
+    ctx.fillStyle = COLORS[type];
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawCell(ctx, px, py, size, color, alpha) {
+  ctx.save();</pre>
+</div>
+<div class="page">
+<div class="hdr"><span>引力方块游戏软件V1.0 源程序</span><span>第 17 页 / 共 51 页</span></div>
+<pre class="code">  ctx.globalAlpha = alpha === undefined ? 1 : alpha;
+  roundRect(ctx, px + 1.5, py + 1.5, size - 3, size - 3, Math.min(7, size * 0.2));
+  ctx.fillStyle = color;
+  ctx.fill();
+  // 顶部高光
+  ctx.fillStyle = &#39;rgba(255,255,255,0.22)&#39;;
+  roundRect(ctx, px + 4, py + 3.5, Math.max(2, size - 8), Math.max(2, size * 0.12), 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawButton(ctx, b, L, dir, enabled) {
+  const s = L.s;
+  ctx.save();
+  if (enabled === false) ctx.globalAlpha = 0.45;
+  if (b.primary) {
+    const g = ctx.createLinearGradient(b.x, b.y, b.x, b.y + b.h);
+    g.addColorStop(0, &#39;#ff6b8a&#39;);
+    g.addColorStop(1, &#39;#e63958&#39;);
+    roundRect(ctx, b.x, b.y, b.w, b.h, b.h * 0.28);
+    ctx.fillStyle = g;
+    ctx.fill();
+  } else {
+    roundRect(ctx, b.x, b.y, b.w, b.h, Math.min(b.h * 0.28, 14 * s));
+    ctx.fillStyle = &#39;rgba(255,255,255,0.09)&#39;;
+    ctx.fill();
+    ctx.strokeStyle = &#39;rgba(255,255,255,0.18)&#39;;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
+  const cx = b.x + b.w / 2;
+  const cy = b.y + b.h / 2;
+
+  if (b.glyph === &#39;perp&#39; &amp;&amp; dir !== undefined) {
+    const p = PERP[dir];
+    drawTriangle(ctx, cx, cy, p.x * b.sign, p.y * b.sign, Math.min(b.w, b.h) * 0.42, &#39;#ffffff&#39;);
+  } else if (b.glyph === &#39;drop&#39; &amp;&amp; dir !== undefined) {
+    const d = DIRS[dir];
+    drawTriangle(ctx, cx, cy - 4 * s, d.x, d.y, Math.min(b.w, b.h) * 0.44, ACCENT);
+    text(ctx, &#39;落下&#39;, cx, cy + b.h * 0.34, 10 * s, &#39;rgba(255,255,255,0.75)&#39;, &#39;center&#39;, false);
+  } else if (b.glyph === &#39;pause&#39;) {
+    const bw2 = 4 * s, bh2 = 14 * s, gap = 3 * s;
+    ctx.fillStyle = &#39;#ffffff&#39;;
+    ctx.fillRect(cx - gap - bw2, cy - bh2 / 2, bw2, bh2);
+    ctx.fillRect(cx + gap, cy - bh2 / 2, bw2, bh2);
+  } else if (b.text) {
+    const fs = b.small2 ? 11 : (b.small ? 15 : 17);
+    const dy = b.small2 ? 4 * s : (b.small ? 5 * s : 7 * s);
+    text(ctx, b.text, cx, cy + dy, fs * s,</pre>
+</div>
+<div class="page">
+<div class="hdr"><span>引力方块游戏软件V1.0 源程序</span><span>第 18 页 / 共 51 页</span></div>
+<pre class="code">      b.primary ? &#39;#ffffff&#39; : &#39;rgba(255,255,255,0.92)&#39;, &#39;center&#39;, true);
+  }
+  ctx.restore();
+}
+
+/* ================= 场景绘制 ================= */
+
+function drawBackground(ctx, L) {
+  const g = ctx.createLinearGradient(0, 0, 0, L.h);
+  g.addColorStop(0, BG_TOP);
+  g.addColorStop(1, BG_BOTTOM);
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, L.w, L.h);
+}
+
+function drawMenu(ctx, L, main, t) {
+  const s = L.s, w = L.w, h = L.h;
+  // 漂浮装饰方块
+  const deco = [
+    { type: &#39;T&#39;, x: w * 0.18, y: h * 0.16, cell: 13 * s, ph: 0 },
+    { type: &#39;I&#39;, x: w * 0.80, y: h * 0.22, cell: 11 * s, ph: 2 },
+    { type: &#39;S&#39;, x: w * 0.14, y: h * 0.36, cell: 10 * s, ph: 4 },
+    { type: &#39;L&#39;, x: w * 0.86, y: h * 0.40, cell: 11 * s, ph: 1 },
+  ];
+  for (let i = 0; i &lt; deco.length; i++) {
+    const d = deco[i];
+    const yy = d.y + Math.sin(t / 900 + d.ph) * 6 * s;
+    drawMiniShape(ctx, d.type, d.x, yy, d.cell, 0.5);
+  }
+
+  text(ctx, &#39;引力方块&#39;, w / 2, h * 0.30, 42 * s, &#39;#ffffff&#39;, &#39;center&#39;, true);
+  text(ctx, &#39;四向重力 &#183; 方块消除玩法&#39;, w / 2, h * 0.30 + 30 * s, 14 * s, &#39;rgba(255,255,255,0.65)&#39;, &#39;center&#39;, false);
+  text(ctx, &#39;最高分 &#39; + main.best + &#39; &#183; 金币 &#39; + (main.coins || 0), w / 2, h * 0.50 - 22 * s,
+    15 * s, &#39;rgba(255,215,0,0.9)&#39;, &#39;center&#39;, true);
+
+  const btns = sceneButtons(&#39;menu&#39;, L, main.sceneOpts ? main.sceneOpts() : {});
+  for (let i = 0; i &lt; btns.length; i++) drawButton(ctx, btns[i], L, undefined, true);
+
+  text(ctx, &#39;v1.1.0 &#183; 抖音小游戏&#39;, w / 2, h - 20 * s, 11 * s, &#39;rgba(255,255,255,0.35)&#39;, &#39;center&#39;, false);
+}
+
+function drawHud(ctx, L, main) {
+  const s = L.s, hud = L.hud;
+  const core = main.core;
+  const colW = (hud.w - 56 * s) / 3;
+  const cols = [
+    { label: &#39;分数&#39;, value: String(core.score) },
+    { label: &#39;关卡&#39;, value: String(core.level) },
+    { label: &#39;行数&#39;, value: String(core.lines) },
+  ];</pre>
+</div>
+<div class="page">
+<div class="hdr"><span>引力方块游戏软件V1.0 源程序</span><span>第 19 页 / 共 51 页</span></div>
+<pre class="code">  for (let i = 0; i &lt; cols.length; i++) {
+    const cx = hud.x + colW * i + colW / 2;
+    text(ctx, cols[i].label, cx, hud.y + 16 * s, 11 * s, &#39;rgba(255,255,255,0.55)&#39;, &#39;center&#39;, false);
+    text(ctx, cols[i].value, cx, hud.y + 42 * s, i === 0 ? 24 * s : 20 * s, &#39;#ffffff&#39;, &#39;center&#39;, true);
+  }
+}
+
+function drawNextBox(ctx, L, main, t) {
+  const s = L.s, bx = L.nextBox;
+  const next = main.core.next;
+  roundRect(ctx, bx.x, bx.y, bx.w, bx.h, 10 * s);
+  ctx.fillStyle = &#39;rgba(255,255,255,0.06)&#39;;
+  ctx.fill();
+  text(ctx, &#39;下一个&#39;, bx.x + 10 * s, bx.y + 15 * s, 10 * s, &#39;rgba(255,255,255,0.55)&#39;, &#39;left&#39;, false);
+  drawMiniShape(ctx, next.type, bx.x + bx.w * 0.38, bx.y + bx.h * 0.58, 10 * s, 1);
+  const d = DIRS[next.dir];
+  drawTriangle(ctx, bx.x + bx.w * 0.78, bx.y + bx.h * 0.58, d.x, d.y, 16 * s, ACCENT);
+}
+
+function drawGravBox(ctx, L, main, t) {
+  const s = L.s, gx = L.gravBox;
+  const cur = main.core.current;
+  const dir = cur ? cur.dir : 0;
+  const d = DIRS[dir];
+  roundRect(ctx, gx.x, gx.y, gx.w, gx.h, 10 * s);
+  ctx.fillStyle = &#39;rgba(255,255,255,0.06)&#39;;
+  ctx.fill();
+  text(ctx, &#39;重力方向&#39;, gx.x + 12 * s, gx.y + 15 * s, 10 * s, &#39;rgba(255,255,255,0.55)&#39;, &#39;left&#39;, false);
+  drawTriangle(ctx, gx.x + 30 * s, gx.y + gx.h * 0.60, d.x, d.y, 20 * s, ACCENT);
+  const hinting = main.core.phase === &#39;hint&#39;;
+  const stateText = main.core.gameOver ? &#39;—&#39; : (hinting ? &#39;准备下落…&#39; : &#39;下落中&#39;);
+  const alpha = hinting ? 0.55 + 0.4 * Math.sin(t / 160) : 0.75;
+  text(ctx, stateText, gx.x + 56 * s, gx.y + gx.h * 0.66, 13 * s, &#39;rgba(255,255,255,&#39; + alpha.toFixed(2) + &#39;)&#39;, &#39;left&#39;, true);
+}
+
+function drawBoard(ctx, L, main, t) {
+  const s = L.s, B = L.board, core = main.core;
+  const cell = B.cell;
+
+  // 底板
+  roundRect(ctx, B.x - 4 * s, B.y - 4 * s, B.size + 8 * s, B.size + 8 * s, 10 * s);
+  ctx.fillStyle = &#39;rgba(0,0,0,0.35)&#39;;
+  ctx.fill();
+  ctx.strokeStyle = &#39;rgba(255,255,255,0.10)&#39;;
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // 网格线
+  ctx.save();
+  ctx.strokeStyle = &#39;rgba(255,255,255,0.05)&#39;;</pre>
+</div>
+<div class="page">
+<div class="hdr"><span>引力方块游戏软件V1.0 源程序</span><span>第 20 页 / 共 51 页</span></div>
+<pre class="code">  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let i = 1; i &lt; COLS; i++) {
+    ctx.moveTo(B.x + i * cell, B.y);
+    ctx.lineTo(B.x + i * cell, B.y + B.size);
+    ctx.moveTo(B.x, B.y + i * cell);
+    ctx.lineTo(B.x + B.size, B.y + i * cell);
+  }
+  ctx.stroke();
+  ctx.restore();
+
+  // 中心生成点标记
+  ctx.save();
+  ctx.strokeStyle = &#39;rgba(255,255,255,0.16)&#39;;
+  ctx.lineWidth = 1.5;
+  const ccx = B.x + B.size / 2, ccy = B.y + B.size / 2, cr = 5 * s;
+  ctx.beginPath();
+  ctx.moveTo(ccx - cr, ccy); ctx.lineTo(ccx + cr, ccy);
+  ctx.moveTo(ccx, ccy - cr); ctx.lineTo(ccx, ccy + cr);
+  ctx.stroke();
+  ctx.restore();
+
+  const px = (c) =&gt; B.x + c.x * cell;
+  const py = (c) =&gt; B.y + c.y * cell;
+
+  // 已固定格子
+  for (let r = 0; r &lt; ROWS; r++) {
+    for (let c = 0; c &lt; COLS; c++) {
+      const v = core.board.grid[r][c];
+      if (v) drawCell(ctx, B.x + c * cell, B.y + r * cell, cell, COLORS[v], 1);
+    }
+  }
+
+  const cur = core.current;
+  if (cur &amp;&amp; !core.gameOver) {
+    const dir = cur.dir;
+    const d = DIRS[dir];
+
+    // 重力侧墙高亮
+    ctx.save();
+    ctx.strokeStyle = ACCENT;
+    ctx.globalAlpha = 0.85;
+    ctx.lineWidth = 3 * s;
+    ctx.beginPath();
+    if (d.y === 1) { ctx.moveTo(B.x, B.y + B.size - 1.5 * s); ctx.lineTo(B.x + B.size, B.y + B.size - 1.5 * s); }
+    if (d.y === -1) { ctx.moveTo(B.x, B.y + 1.5 * s); ctx.lineTo(B.x + B.size, B.y + 1.5 * s); }
+    if (d.x === 1) { ctx.moveTo(B.x + B.size - 1.5 * s, B.y); ctx.lineTo(B.x + B.size - 1.5 * s, B.y + B.size); }
+    if (d.x === -1) { ctx.moveTo(B.x + 1.5 * s, B.y); ctx.lineTo(B.x + 1.5 * s, B.y + B.size); }
+    ctx.stroke();
+    ctx.restore();</pre>
+</div>
+<div class="page">
+<div class="hdr"><span>引力方块游戏软件V1.0 源程序</span><span>第 21 页 / 共 51 页</span></div>
+<pre class="code">
+    // 幽灵落点
+    const ghost = core.ghostCells();
+    ctx.save();
+    ctx.globalAlpha = 0.3;
+    ctx.strokeStyle = COLORS[cur.type];
+    ctx.lineWidth = 1.5;
+    for (let i = 0; i &lt; ghost.length; i++) {
+      roundRect(ctx, px(ghost[i]) + 2, py(ghost[i]) + 2, cell - 4, cell - 4, cell * 0.18);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // 当前方块（hint 相位半透明呼吸闪烁 = 下落前提示）
+    const hinting = core.phase === &#39;hint&#39;;
+    const alpha = hinting ? 0.45 + 0.3 * (0.5 + 0.5 * Math.sin(t / 150)) : 1;
+    const cells = core.cells(cur);
+    for (let i = 0; i &lt; cells.length; i++) {
+      drawCell(ctx, px(cells[i]), py(cells[i]), cell, COLORS[cur.type], alpha);
+    }
+
+    // hint 相位：大号方向箭头（从中心指向重力墙）
+    if (hinting) {
+      const pulse = 0.55 + 0.45 * Math.sin(t / 150);
+      const ax = B.x + B.size / 2 + d.x * B.size * 0.33;
+      const ay = B.y + B.size / 2 + d.y * B.size * 0.33;
+      ctx.save();
+      ctx.globalAlpha = pulse;
+      drawTriangle(ctx, ax, ay, d.x, d.y, 34 * s, &#39;#ffffff&#39;);
+      ctx.restore();
+    }
+  }
+
+  // 消行闪光特效
+  for (let i = 0; i &lt; main.fx.length; i++) {
+    const f = main.fx[i];
+    const k = 1 - f.t / f.dur;
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, k) * 0.85;
+    ctx.fillStyle = &#39;#ffffff&#39;;
+    for (let j = 0; j &lt; f.cells.length; j++) {
+      ctx.fillRect(px(f.cells[j]), py(f.cells[j]), cell, cell);
+    }
+    ctx.restore();
+  }
+
+  // 提示浮字
+  if (main.toast) {
+    const k = main.toast.t / main.toast.dur;
+    const alpha = k &lt; 0.15 ? k / 0.15 : (k &gt; 0.7 ? (1 - k) / 0.3 : 1);</pre>
+</div>
+<div class="page">
+<div class="hdr"><span>引力方块游戏软件V1.0 源程序</span><span>第 22 页 / 共 51 页</span></div>
+<pre class="code">    text(ctx, main.toast.text, B.x + B.size / 2, B.y - 12 * s - (1 - alpha) * 8 * s,
+      17 * s, &#39;#ffd54f&#39;, &#39;center&#39;, true, Math.max(0, alpha));
+  }
+}
+
+function drawControls(ctx, L, main) {
+  const dir = main.core.current ? main.core.current.dir : 0;
+  const enabled = main.core.canControl();
+  const btns = sceneButtons(&#39;playing&#39;, L);
+  for (let i = 0; i &lt; btns.length; i++) {
+    const b = btns[i];
+    if (b.id === &#39;pause&#39;) { drawButton(ctx, b, L, dir, true); continue; }
+    drawButton(ctx, b, L, dir, enabled);
+  }
+}
+
+function drawGameScene(ctx, L, main, t) {
+  drawHud(ctx, L, main);
+  drawNextBox(ctx, L, main, t);
+  drawGravBox(ctx, L, main, t);
+  drawBoard(ctx, L, main, t);
+  drawControls(ctx, L, main);
+}
+
+function drawOverlay(ctx, L, alpha) {
+  ctx.save();
+  ctx.fillStyle = &#39;rgba(5,7,15,&#39; + alpha + &#39;)&#39;;
+  ctx.fillRect(0, 0, L.w, L.h);
+  ctx.restore();
+}
+
+function drawPaused(ctx, L, main) {
+  drawOverlay(ctx, L, 0.55);
+  const s = L.s;
+  text(ctx, &#39;已暂停&#39;, L.w / 2, L.h * 0.32, 30 * s, &#39;#ffffff&#39;, &#39;center&#39;, true);
+  const btns = sceneButtons(&#39;paused&#39;, L);
+  const dir = main.core.current ? main.core.current.dir : 0;
+  for (let i = 0; i &lt; btns.length; i++) {
+    const b = btns[i];
+    if (b.id === &#39;resume&#39; || b.id === &#39;restart&#39; || b.id === &#39;tomenu&#39;) drawButton(ctx, b, L, dir, true);
+  }
+}
+
+function drawGameOver(ctx, L, main) {
+  drawOverlay(ctx, L, 0.6);
+  const s = L.s, w = L.w, h = L.h, core = main.core;
+
+  const px2 = 26 * s, pw = w - 52 * s;
+  const py2 = h * 0.14, ph = h * 0.30;
+  roundRect(ctx, px2, py2, pw, ph, 16 * s);</pre>
+</div>
+<div class="page">
+<div class="hdr"><span>引力方块游戏软件V1.0 源程序</span><span>第 23 页 / 共 51 页</span></div>
+<pre class="code">  ctx.fillStyle = &#39;rgba(20,24,44,0.95)&#39;;
+  ctx.fill();
+  ctx.strokeStyle = &#39;rgba(255,255,255,0.12)&#39;;
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  text(ctx, &#39;游戏结束&#39;, w / 2, py2 + 40 * s, 24 * s, &#39;#ffffff&#39;, &#39;center&#39;, true);
+  text(ctx, main.newBest ? &#39;新纪录！&#39; : &#39;中心被堵住了&#39;, w / 2, py2 + 64 * s, 12 * s,
+    main.newBest ? &#39;#ffd54f&#39; : &#39;rgba(255,255,255,0.55)&#39;, &#39;center&#39;, true);
+
+  const rows = [
+    [&#39;本局分数&#39;, String(core.score)],
+    [&#39;最高分&#39;, String(main.best)],
+    [&#39;到达关卡&#39;, &#39;第 &#39; + core.level + &#39; 关&#39;],
+    [&#39;消除行数&#39;, core.lines + &#39; 行&#39;],
+  ];
+  const ry0 = py2 + 92 * s;
+  for (let i = 0; i &lt; rows.length; i++) {
+    const yy = ry0 + i * 24 * s;
+    text(ctx, rows[i][0], px2 + 28 * s, yy, 13 * s, &#39;rgba(255,255,255,0.6)&#39;, &#39;left&#39;, false);
+    text(ctx, rows[i][1], px2 + pw - 28 * s, yy, 14 * s, &#39;#ffffff&#39;, &#39;right&#39;, true);
+  }
+
+  const btns = sceneButtons(&#39;gameover&#39;, L, main.sceneOpts ? main.sceneOpts() : {});
+  for (let i = 0; i &lt; btns.length; i++) drawButton(ctx, btns[i], L, undefined, true);
+}
+
+/** 侧边栏复访任务面板（必接能力，官方指引：入口奖励 + 跳转侧边栏 + 复访领奖） */
+function drawSidebar(ctx, L, main) {
+  drawOverlay(ctx, L, 0.66);
+  const s = L.s, w = L.w, h = L.h;
+  const px2 = 22 * s, pw = w - 44 * s;
+  const py2 = h * 0.14, ph = h * 0.58;
+  roundRect(ctx, px2, py2, pw, ph, 16 * s);
+  ctx.fillStyle = &#39;rgba(20,24,44,0.97)&#39;;
+  ctx.fill();
+  ctx.strokeStyle = &#39;rgba(255,255,255,0.12)&#39;;
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  text(ctx, &#39;首页侧边栏入口奖励&#39;, w / 2, py2 + 40 * s, 20 * s, &#39;#ffffff&#39;, &#39;center&#39;, true);
+  text(ctx, &#39;每日从侧边栏进入游戏可领 &#39; + PLATFORM.SIDEBAR_REWARD_COINS + &#39; 金币&#39;,
+    w / 2, py2 + 66 * s, 13 * s, &#39;rgba(255,215,0,0.9)&#39;, &#39;center&#39;, true);
+
+  const lines = [
+    &#39;① 点击下方「去首页侧边栏」按钮&#39;,
+    &#39;② 在侧边栏中点击「引力方块」图标&#39;,
+    &#39;③ 返回游戏，点击「立即领奖」&#39;,
+  ];
+  for (let i = 0; i &lt; lines.length; i++) {</pre>
+</div>
+<div class="page">
+<div class="hdr"><span>引力方块游戏软件V1.0 源程序</span><span>第 24 页 / 共 51 页</span></div>
+<pre class="code">    text(ctx, lines[i], px2 + 26 * s, py2 + 106 * s + i * 30 * s, 14 * s, &#39;rgba(255,255,255,0.85)&#39;, &#39;left&#39;, false);
+  }
+
+  const opts = main.sceneOpts ? main.sceneOpts() : {};
+  let status, color;
+  if (opts.sidebarClaimable) {
+    status = &#39;✔ 已检测到侧边栏复访，可领取今日奖励&#39;;
+    color = &#39;#69f0ae&#39;;
+  } else if (opts.sidebarClaimedToday) {
+    status = &#39;今日奖励已领取，明天再来&#39;;
+    color = &#39;rgba(255,255,255,0.5)&#39;;
+  } else if (opts.sidebarSupported === false) {
+    status = &#39;当前宿主不支持侧边栏，请在抖音 App 中打开&#39;;
+    color = &#39;rgba(255,255,255,0.5)&#39;;
+  } else {
+    status = &#39;尚未从侧边栏进入，按上述步骤完成即可领奖&#39;;
+    color = &#39;rgba(255,255,255,0.65)&#39;;
+  }
+  text(ctx, status, w / 2, h * 0.565 - 20 * s, 12 * s, color, &#39;center&#39;, true);
+
+  const btns = sceneButtons(&#39;sidebar&#39;, L, opts);
+  for (let i = 0; i &lt; btns.length; i++) {
+    const b = btns[i];
+    const enabled = (b.id !== &#39;sidebarAction&#39;) || opts.sidebarSupported !== false;
+    drawButton(ctx, b, L, undefined, enabled);
+  }
+}
+
+/** 全局浮动提示（平台能力反馈等，所有场景可见） */
+function drawPToast(ctx, L, main) {
+  const p = main.ptoast;
+  if (!p) return;
+  const k = p.t / p.dur;
+  let alpha = 1;
+  if (k &lt; 0.1) alpha = k / 0.1;
+  else if (k &gt; 0.75) alpha = (1 - k) / 0.25;
+  alpha = Math.max(0, Math.min(1, alpha));
+  const s = L.s;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.font = &#39;bold &#39; + (13 * s) + &#39;px sans-serif&#39;;
+  const tw = ctx.measureText(p.text).width;
+  const bw = tw + 36 * s, bh = 36 * s;
+  const bx = (L.w - bw) / 2, by = L.h * 0.15;
+  roundRect(ctx, bx, by, bw, bh, bh / 2);
+  ctx.fillStyle = &#39;rgba(10,12,24,0.9)&#39;;
+  ctx.fill();
+  ctx.strokeStyle = &#39;rgba(255,255,255,0.18)&#39;;
+  ctx.lineWidth = 1;
+  ctx.stroke();</pre>
+</div>
+<div class="page">
+<div class="hdr"><span>引力方块游戏软件V1.0 源程序</span><span>第 25 页 / 共 51 页</span></div>
+<pre class="code">  text(ctx, p.text, L.w / 2, by + bh * 0.68, 13 * s, &#39;#ffffff&#39;, &#39;center&#39;, true);
+  ctx.restore();
+}
+
+function drawRank(ctx, L, main, t) {
+  const s = L.s, w = L.w, h = L.h;
+  text(ctx, &#39;排行榜&#39;, w / 2, 44 * s, 24 * s, &#39;#ffffff&#39;, &#39;center&#39;, true);
+
+  // 好友排行（开放数据域共享画布）
+  const A = L.rankArea;
+  roundRect(ctx, A.x, A.y, A.w, A.h, 12 * s);
+  ctx.save();
+  ctx.clip();
+  ctx.fillStyle = &#39;rgba(255,255,255,0.05)&#39;;
+  ctx.fillRect(A.x, A.y, A.w, A.h);
+  if (main.friendCanvas &amp;&amp; main.friendCanvas.width &gt; 0 &amp;&amp; main.friendCanvas.height &gt; 0) {
+    try {
+      ctx.drawImage(main.friendCanvas, A.x, A.y, A.w, A.h);
+    } catch (e) {
+      text(ctx, &#39;好友排行渲染失败&#39;, A.x + A.w / 2, A.y + A.h / 2, 13 * s, &#39;rgba(255,255,255,0.5)&#39;, &#39;center&#39;, false);
+    }
+  } else {
+    text(ctx, &#39;好友排行&#39;, A.x + A.w / 2, A.y + A.h / 2 - 10 * s, 14 * s, &#39;rgba(255,255,255,0.6)&#39;, &#39;center&#39;, true);
+    text(ctx, &#39;需登录抖音并在真机运行&#39;, A.x + A.w / 2, A.y + A.h / 2 + 12 * s, 11 * s, &#39;rgba(255,255,255,0.4)&#39;, &#39;center&#39;, false);
+  }
+  ctx.restore();
+
+  // 本机 TOP10
+  const ly = A.y + A.h + 26 * s;
+  text(ctx, &#39;本机 TOP10&#39;, A.x + 4 * s, ly, 14 * s, &#39;#ffd54f&#39;, &#39;left&#39;, true);
+  const list = main.localRank || [];
+  if (list.length === 0) {
+    text(ctx, &#39;暂无记录，快去玩一局吧&#39;, w / 2, ly + 34 * s, 12 * s, &#39;rgba(255,255,255,0.45)&#39;, &#39;center&#39;, false);
+  } else {
+    const n = Math.min(list.length, 8);
+    const rowH = Math.min(24 * s, (h - 100 * s - ly) / Math.max(n, 1));
+    for (let i = 0; i &lt; n; i++) {
+      const it = list[i];
+      const yy = ly + 22 * s + i * rowH;
+      const medal = i === 0 ? &#39;#ffd54f&#39; : (i === 1 ? &#39;#cfd8dc&#39; : (i === 2 ? &#39;#ffab40&#39; : &#39;rgba(255,255,255,0.45)&#39;));
+      text(ctx, String(i + 1), A.x + 10 * s, yy, 12 * s, medal, &#39;left&#39;, true);
+      text(ctx, String(it.score), A.x + 40 * s, yy, 13 * s, &#39;#ffffff&#39;, &#39;left&#39;, true);
+      const dt = new Date(it.ts || Date.now());
+      const dateStr = (dt.getMonth() + 1) + &#39;-&#39; + dt.getDate();
+      text(ctx, &#39;第&#39; + it.level + &#39;关 &#183; &#39; + it.lines + &#39;行 &#183; &#39; + dateStr,
+        A.x + A.w - 8 * s, yy, 11 * s, &#39;rgba(255,255,255,0.5)&#39;, &#39;right&#39;, false);
+    }
+  }
+
+  const btns = sceneButtons(&#39;rank&#39;, L);</pre>
+</div>
+<div class="page">
+<div class="hdr"><span>引力方块游戏软件V1.0 源程序</span><span>第 26 页 / 共 51 页</span></div>
+<pre class="code">  for (let i = 0; i &lt; btns.length; i++) drawButton(ctx, btns[i], L, undefined, true);
+}
+
+function drawHelp(ctx, L, main) {
+  drawOverlay(ctx, L, 0.66);
+  const s = L.s, w = L.w, h = L.h;
+  const px2 = 22 * s, pw = w - 44 * s;
+  const py2 = h * 0.10, ph = h * 0.66;
+  roundRect(ctx, px2, py2, pw, ph, 16 * s);
+  ctx.fillStyle = &#39;rgba(20,24,44,0.97)&#39;;
+  ctx.fill();
+
+  text(ctx, &#39;玩法说明&#39;, w / 2, py2 + 38 * s, 20 * s, &#39;#ffffff&#39;, &#39;center&#39;, true);
+  const lines = [
+    &#39;&#183; 方块从棋盘中心生成，箭头指示重力方向&#39;,
+    &#39;&#183; 下落前方块会停留片刻，提示类型与方向&#39;,
+    &#39;&#183; ◀ ▶ 按钮：沿垂直于重力的方向移动&#39;,
+    &#39;&#183; 点击棋盘任意处：旋转方块&#39;,
+    &#39;&#183; 沿重力方向滑动棋盘：快速落底&#39;,
+    &#39;&#183; 「落下」按钮：立即沿重力落底&#39;,
+    &#39;&#183; 填满任意整行或整列即可消除得分&#39;,
+    &#39;&#183; 消除后剩余方块整体下沉落底，可连锁消除&#39;,
+    &#39;&#183; 每消除 8 行升 1 关，下落速度加快&#39;,
+    &#39;&#183; 中心出生点被堵住时游戏结束&#39;,
+  ];
+  for (let i = 0; i &lt; lines.length; i++) {
+    text(ctx, lines[i], px2 + 22 * s, py2 + 76 * s + i * 27 * s, 13 * s, &#39;rgba(255,255,255,0.85)&#39;, &#39;left&#39;, false);
+  }
+
+  const btns = sceneButtons(&#39;help&#39;, L);
+  for (let i = 0; i &lt; btns.length; i++) drawButton(ctx, btns[i], L, undefined, true);
+}
+
+/* ================= 总入口 ================= */
+
+function draw(main) {
+  const ctx = main.ctx, L = main.L, t = Date.now();
+  drawBackground(ctx, L);
+  switch (main.state) {
+    case &#39;menu&#39;:
+      drawMenu(ctx, L, main, t);
+      break;
+    case &#39;playing&#39;:
+      drawGameScene(ctx, L, main, t);
+      break;
+    case &#39;paused&#39;:
+      drawGameScene(ctx, L, main, t);
+      drawPaused(ctx, L, main);
+      break;
+    case &#39;gameover&#39;:</pre>
+</div>
+<div class="page">
+<div class="hdr"><span>引力方块游戏软件V1.0 源程序</span><span>第 27 页 / 共 51 页</span></div>
+<pre class="code">      drawGameScene(ctx, L, main, t);
+      drawGameOver(ctx, L, main);
+      break;
+    case &#39;rank&#39;:
+      drawRank(ctx, L, main, t);
+      break;
+    case &#39;help&#39;:
+      drawMenu(ctx, L, main, t);
+      drawHelp(ctx, L, main);
+      break;
+    case &#39;sidebar&#39;:
+      drawMenu(ctx, L, main, t);
+      drawSidebar(ctx, L, main);
+      break;
+    default:
+      break;
+  }
+  drawPToast(ctx, L, main);
+}
+
+module.exports = { buildLayout, sceneButtons, draw, roundRect };
+/* ======== 文件: js/input.js ======== */
+/**
+ * 触摸输入：区分“点按”与“滑动”手势
+ * - 点按（位移小、时间短）→ onTap(x, y)
+ * - 滑动（位移足够大）→ onSwipe(dx, dy, startX, startY)
+ */
+class Input {
+  constructor(TT) {
+    this.onTap = null;
+    this.onSwipe = null;
+    this._start = null;
+    if (!TT) return;
+    try {
+      TT.onTouchStart((e) =&gt; this._onStart(e));
+      TT.onTouchMove((e) =&gt; this._onMove(e));
+      TT.onTouchEnd((e) =&gt; this._onEnd(e));
+      TT.onTouchCancel(() =&gt; { this._start = null; });
+    } catch (e) { /* 平台不支持时忽略 */ }
+  }
+
+  _touch(e) {
+    return e &amp;&amp; e.touches &amp;&amp; e.touches[0] ? e.touches[0] : null;
+  }
+
+  _onStart(e) {
+    const t = this._touch(e);
+    if (!t) return;
+    this._start = { x: t.clientX, y: t.clientY, t: Date.now(), moved: false };
+  }</pre>
+</div>
+<div class="page">
+<div class="hdr"><span>引力方块游戏软件V1.0 源程序</span><span>第 28 页 / 共 51 页</span></div>
+<pre class="code">
+  _onMove(e) {
+    if (!this._start) return;
+    const t = this._touch(e);
+    if (!t) return;
+    if (Math.abs(t.clientX - this._start.x) &gt; 12 || Math.abs(t.clientY - this._start.y) &gt; 12) {
+      this._start.moved = true;
+    }
+  }
+
+  _onEnd(e) {
+    const s = this._start;
+    this._start = null;
+    if (!s) return;
+    const t = e &amp;&amp; e.changedTouches &amp;&amp; e.changedTouches[0] ? e.changedTouches[0] : null;
+    const x = t ? t.clientX : s.x;
+    const y = t ? t.clientY : s.y;
+    const dx = x - s.x;
+    const dy = y - s.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (!s.moved &amp;&amp; dist &lt; 14 &amp;&amp; Date.now() - s.t &lt; 600) {
+      if (this.onTap) this.onTap(x, y);
+    } else if (dist &gt;= 26) {
+      if (this.onSwipe) this.onSwipe(dx, dy, s.x, s.y);
+    }
+  }
+}
+
+module.exports = Input;
+/* ======== 文件: js/platform.js ======== */
+/**
+ * 平台能力模块：统一封装抖音小游戏审核要求的平台能力
+ *
+ * 对应审核检测项：
+ *  1. 侧边栏复访（必接）— tt.navigateToScene({scene:&#39;sidebar&#39;}) 跳转侧边栏；
+ *     tt.checkScene 判断宿主是否支持；tt.onShow 监听启动来源（location=&#39;sidebar_card&#39;
+ *     或 scene=&#39;021036&#39; 即为侧边栏启动），据此发放每日复访奖励。
+ *     ⚠️ 官方要求 tt.onShow 必须在 game.js 运行时机同步注册（见 game.js）。
+ *  2. 添加到桌面 — tt.addToDesktop
+ *  3. 订阅消息   — tt.requestSubscribeMessage（模板 ID 见 config.js PLATFORM）
+ *  4. 广告       — tt.createRewardedVideoAd（激励视频）/ tt.createInterstitialAd（插屏）
+ *  5. 内购       — tt.requestMidasPaymentGameItem（需版号；PLATFORM.ENABLE_IAP=false 时入口隐藏）
+ *
+ * 另含金币钱包（tt.setStorageSync 持久化）：看广告得金币、侧边栏复访得金币、
+ * 金币复活消耗、（开通内购后）购买金币。
+ *
+ * 说明：本文件刻意使用字面量 tt.xxx(...) 形式调用（而非别名），
+ * 与官方文档/审核检测的调用特征保持一致；所有调用均先经 typeof 守卫 + try/catch，
+ * API 缺失或失败时静默降级，绝不影响游戏本体运行。
+ */</pre>
+</div>
+<div class="page">
+<div class="hdr"><span>引力方块游戏软件V1.0 源程序</span><span>第 29 页 / 共 51 页</span></div>
+<pre class="code">const { PLATFORM } = require(&#39;./config.js&#39;);
+
+const KEY_COINS = &#39;gravcube.coins&#39;;
+const KEY_SIDEBAR_CLAIM = &#39;gravcube.sidebarClaim&#39;; // 值为 &#39;YYYY-M-D&#39;，标记当日已领取
+const KEY_WELCOMED = &#39;gravcube.welcomed&#39;;          // 新手赠币只发一次
+
+/* ================= 能力检测 ================= */
+
+const hasTT = (typeof tt !== &#39;undefined&#39;) &amp;&amp; !!tt;
+
+const api = {
+  rewardedAd: hasTT &amp;&amp; typeof tt.createRewardedVideoAd === &#39;function&#39;,
+  interstitialAd: hasTT &amp;&amp; typeof tt.createInterstitialAd === &#39;function&#39;,
+  subscribe: hasTT &amp;&amp; typeof tt.requestSubscribeMessage === &#39;function&#39;,
+  addToDesktop: hasTT &amp;&amp; typeof tt.addToDesktop === &#39;function&#39;,
+  sidebar: hasTT &amp;&amp; typeof tt.navigateToScene === &#39;function&#39;, // 审核要求：必须使用 tt.navigateToScene 调用
+  checkScene: hasTT &amp;&amp; typeof tt.checkScene === &#39;function&#39;,
+  iap: hasTT &amp;&amp; typeof tt.requestMidasPaymentGameItem === &#39;function&#39;,
+  showModal: hasTT &amp;&amp; typeof tt.showModal === &#39;function&#39;,
+};
+
+/* ================= 存储 ================= */
+
+function safeGet(key, def) {
+  try {
+    if (hasTT &amp;&amp; tt.getStorageSync) {
+      const v = tt.getStorageSync(key);
+      return (v === &#39;&#39; || v === undefined || v === null) ? def : v;
+    }
+  } catch (e) { /* 忽略存储异常 */ }
+  return def;
+}
+
+function safeSet(key, value) {
+  try {
+    if (hasTT &amp;&amp; tt.setStorageSync) tt.setStorageSync(key, value);
+  } catch (e) { /* 忽略存储异常 */ }
+}
+
+/* ================= 金币钱包 ================= */
+
+let coinsCache = null; // 内存缓存，避免每帧读存储
+
+function getCoins() {
+  if (coinsCache === null) {
+    const v = safeGet(KEY_COINS, 0);
+    coinsCache = (typeof v === &#39;number&#39; &amp;&amp; isFinite(v) &amp;&amp; v &gt; 0) ? Math.floor(v) : 0;
+  }
+  return coinsCache;
+}</pre>
+</div>
+<div class="page">
+<div class="hdr"><span>引力方块游戏软件V1.0 源程序</span><span>第 30 页 / 共 51 页</span></div>
+<pre class="code">
+function addCoins(n) {
+  const v = getCoins() + Math.max(0, Math.floor(n) || 0);
+  coinsCache = v;
+  safeSet(KEY_COINS, v);
+  return v;
+}
+
+function spendCoins(n) {
+  n = Math.floor(n) || 0;
+  if (getCoins() &lt; n) return false;
+  coinsCache -= n;
+  safeSet(KEY_COINS, coinsCache);
+  return true;
+}
+
+/* ================= 启动信息与生命周期（侧边栏复访） ================= */
+
+let launchInfo = null;         // 最近一次 tt.onShow 的启动参数（官方要求始终用最新值判断）
+let sidebarAvailable = null;   // tt.checkScene 结果：true / false / null(未知)
+const showListeners = [];
+let lifecycleReady = false;
+
+function todayStr() {
+  const d = new Date();
+  return d.getFullYear() + &#39;-&#39; + (d.getMonth() + 1) + &#39;-&#39; + d.getDate();
+}
+
+/** 是否从抖音首页侧边栏启动（官方判定：location=&#39;sidebar_card&#39;，scene=&#39;021036&#39;） */
+function isFromSidebar() {
+  if (!launchInfo) return false;
+  return launchInfo.location === &#39;sidebar_card&#39; || launchInfo.scene === &#39;021036&#39;;
+}
+
+/**
+ * 初始化：必须在 game.js 运行时机尽早调用（官方文档强调 tt.onShow 注册过晚会收不到回调）
+ */
+function init() {
+  if (lifecycleReady || !hasTT) return;
+  lifecycleReady = true;
+
+  // 冷启动参数（部分宿主 onShow 首次不回调，用同步接口兜底）
+  try {
+    if (tt.getLaunchOptionsSync) launchInfo = tt.getLaunchOptionsSync() || null;
+  } catch (e) { /* 忽略 */ }
+
+  // 热启动/复访监听：始终保留最新启动信息
+  try {
+    if (tt.onShow) {
+      tt.onShow((opts) =&gt; {</pre>
+</div>
+<div class="page">
+<div class="hdr"><span>引力方块游戏软件V1.0 源程序</span><span>第 31 页 / 共 51 页</span></div>
+<pre class="code">        if (opts) launchInfo = opts;
+        for (let i = 0; i &lt; showListeners.length; i++) {
+          try { showListeners[i](launchInfo); } catch (e) { /* 忽略监听器异常 */ }
+        }
+      });
+    }
+  } catch (e) { /* 忽略 */ }
+
+  // 当前宿主是否支持跳转侧边栏（isExist=false 时不展示奖励入口）
+  try {
+    if (api.checkScene) {
+      tt.checkScene({
+        scene: &#39;sidebar&#39;,
+        success: (res) =&gt; { sidebarAvailable = !!(res &amp;&amp; res.isExist); },
+        fail: () =&gt; { sidebarAvailable = false; },
+      });
+    }
+  } catch (e) { /* 忽略 */ }
+
+  // 新手赠币（一次性）：保证「金币复活」链路在无广告环境下也可用
+  if (!safeGet(KEY_WELCOMED, false)) {
+    safeSet(KEY_WELCOMED, true);
+    if (PLATFORM.WELCOME_COINS &gt; 0) addCoins(PLATFORM.WELCOME_COINS);
+  }
+}
+
+/** 注册 onShow 监听（如刷新金币显示） */
+function onShow(cb) {
+  if (typeof cb === &#39;function&#39;) showListeners.push(cb);
+}
+
+/* ================= 侧边栏复访 ================= */
+
+let sidebarClaimCache = null; // 内存缓存最近领取日期，避免每帧读存储
+
+function claimedDate() {
+  if (sidebarClaimCache === null) sidebarClaimCache = safeGet(KEY_SIDEBAR_CLAIM, &#39;&#39;);
+  return sidebarClaimCache;
+}
+
+/**
+ * 侧边栏复访状态（纯内存判断，可每帧调用）
+ * supported    — 当前宿主是否支持（checkScene 明确返回 false 才算不支持）
+ * fromSidebar  — 本次启动是否来自侧边栏
+ * claimedToday — 今日是否已领取
+ * claimable    — 当前是否可领取奖励
+ */
+function getSidebarState() {
+  const supported = api.sidebar &amp;&amp; sidebarAvailable !== false;
+  const claimedToday = claimedDate() === todayStr();</pre>
+</div>
+<div class="page">
+<div class="hdr"><span>引力方块游戏软件V1.0 源程序</span><span>第 32 页 / 共 51 页</span></div>
+<pre class="code">  const fromSidebar = isFromSidebar();
+  return {
+    supported,
+    fromSidebar,
+    claimedToday,
+    claimable: supported &amp;&amp; fromSidebar &amp;&amp; !claimedToday,
+  };
+}
+
+/** 跳转抖音首页侧边栏（审核要求：必须使用 tt.navigateToScene 调用） */
+function goSidebar(onResult) {
+  const cb = onResult || function () {};
+  if (!api.sidebar) { cb({ ok: false, reason: &#39;unsupported&#39; }); return; }
+  try {
+    tt.navigateToScene({
+      scene: &#39;sidebar&#39;, // 官方接入指引：scene 固定传 &#39;sidebar&#39;
+      success: (res) =&gt; cb({ ok: true, res }),
+      fail: (res) =&gt; cb({ ok: false, reason: &#39;fail&#39;, res }),
+    });
+  } catch (e) {
+    cb({ ok: false, reason: &#39;error&#39;, err: e });
+  }
+}
+
+/** 领取侧边栏复访奖励（每日一次），成功返回 true */
+function claimSidebarReward() {
+  const st = getSidebarState();
+  if (!st.claimable) return false;
+  sidebarClaimCache = todayStr();
+  safeSet(KEY_SIDEBAR_CLAIM, sidebarClaimCache);
+  addCoins(PLATFORM.SIDEBAR_REWARD_COINS);
+  return true;
+}
+
+/* ================= 激励视频广告 ================= */
+
+let rewardedAd = null;
+let rewardedPending = null; // 当前等待结果的回调（防并发）
+
+function failRewardedPending(reason, extra) {
+  const cb = rewardedPending;
+  rewardedPending = null;
+  if (cb) cb(Object.assign({ ok: false, reason }, extra || {}));
+}
+
+function ensureRewardedAd() {
+  if (rewardedAd || !api.rewardedAd) return rewardedAd;
+  try {
+    rewardedAd = tt.createRewardedVideoAd({ adUnitId: PLATFORM.REWARDED_AD_UNIT_ID });
+    if (rewardedAd.onClose) {</pre>
+</div>
+<div class="page">
+<div class="hdr"><span>引力方块游戏软件V1.0 源程序</span><span>第 33 页 / 共 51 页</span></div>
+<pre class="code">      rewardedAd.onClose((res) =&gt; {
+        const cb = rewardedPending;
+        rewardedPending = null;
+        if (!cb) return;
+        // isEnded === true 表示完整观看；false 表示中途退出，不发奖励
+        if (res &amp;&amp; res.isEnded === false) cb({ ok: false, reason: &#39;notEnded&#39; });
+        else cb({ ok: true });
+      });
+    }
+    if (rewardedAd.onError) {
+      rewardedAd.onError((err) =&gt; failRewardedPending(&#39;error&#39;, { err }));
+    }
+  } catch (e) {
+    rewardedAd = null;
+  }
+  return rewardedAd;
+}
+
+/**
+ * 播放激励视频。onResult({ok:true}) 完整观看；
+ * {ok:false, reason:&#39;unsupported&#39;|&#39;busy&#39;|&#39;notEnded&#39;|&#39;error&#39;|&#39;showFail&#39;}
+ */
+function showRewardedAd(onResult) {
+  const cb = onResult || function () {};
+  const ad = ensureRewardedAd();
+  if (!ad || typeof ad.show !== &#39;function&#39;) { cb({ ok: false, reason: &#39;unsupported&#39; }); return; }
+  if (rewardedPending) { cb({ ok: false, reason: &#39;busy&#39; }); return; }
+  rewardedPending = cb;
+  try {
+    const p = ad.show();
+    if (p &amp;&amp; typeof p.catch === &#39;function&#39;) {
+      p.catch(() =&gt; {
+        // 首次 show 失败：load 后重试一次
+        try {
+          const q = (typeof ad.load === &#39;function&#39;) ? ad.load() : null;
+          if (q &amp;&amp; typeof q.then === &#39;function&#39;) {
+            q.then(() =&gt; ad.show()).catch((e) =&gt; failRewardedPending(&#39;showFail&#39;, { err: e }));
+          } else {
+            failRewardedPending(&#39;showFail&#39;);
+          }
+        } catch (e) {
+          failRewardedPending(&#39;showFail&#39;, { err: e });
+        }
+      });
+    }
+  } catch (e) {
+    failRewardedPending(&#39;showFail&#39;, { err: e });
+  }
+}
+</pre>
+</div>
+<div class="page">
+<div class="hdr"><span>引力方块游戏软件V1.0 源程序</span><span>第 34 页 / 共 51 页</span></div>
+<pre class="code">/* ================= 插屏广告 ================= */
+
+let interstitialAd = null;
+let lastInterstitialAt = 0;
+
+/**
+ * 展示插屏广告（带最小间隔节流）。适合在游戏结束等自然停顿点调用。
+ * @param {boolean} force 忽略间隔限制强制展示
+ */
+function showInterstitialAd(force) {
+  if (!api.interstitialAd) return;
+  const now = Date.now();
+  // lastInterstitialAt=0 表示从未展示过，首次不节流
+  if (!force &amp;&amp; lastInterstitialAt !== 0 &amp;&amp; now - lastInterstitialAt &lt; PLATFORM.INTERSTITIAL_MIN_INTERVAL) return;
+  try {
+    if (!interstitialAd) {
+      interstitialAd = tt.createInterstitialAd({ adUnitId: PLATFORM.INTERSTITIAL_AD_UNIT_ID });
+      if (interstitialAd.onError) interstitialAd.onError(() =&gt; { /* 无广告填充等情况，静默 */ });
+      if (interstitialAd.onClose) interstitialAd.onClose(() =&gt; { /* 关闭即恢复游戏，无需处理 */ });
+    }
+    lastInterstitialAt = now;
+    if (typeof interstitialAd.show === &#39;function&#39;) {
+      const p = interstitialAd.show();
+      if (p &amp;&amp; typeof p.catch === &#39;function&#39;) {
+        p.catch(() =&gt; {
+          try {
+            if (typeof interstitialAd.load === &#39;function&#39;) {
+              const q = interstitialAd.load();
+              if (q &amp;&amp; typeof q.then === &#39;function&#39;) q.then(() =&gt; interstitialAd.show()).catch(() =&gt; {});
+            }
+          } catch (e) { /* 忽略 */ }
+        });
+      }
+    } else if (typeof interstitialAd.load === &#39;function&#39;) {
+      interstitialAd.load(); // 预加载，下次再展示
+    }
+  } catch (e) { /* 忽略广告异常 */ }
+}
+
+/* ================= 订阅消息 ================= */
+
+/** 请求订阅消息（模板 ID 需在开发者后台「功能→订阅消息」中创建并填入 config.js） */
+function requestSubscribe(onResult) {
+  const cb = onResult || function () {};
+  if (!api.subscribe) { cb({ ok: false, reason: &#39;unsupported&#39; }); return; }
+  try {
+    tt.requestSubscribeMessage({
+      tmplIds: PLATFORM.SUBSCRIBE_TMPL_IDS,
+      success: (res) =&gt; cb({ ok: true, res }),
+      fail: (res) =&gt; cb({ ok: false, reason: &#39;fail&#39;, res }),</pre>
+</div>
+<div class="page">
+<div class="hdr"><span>引力方块游戏软件V1.0 源程序</span><span>第 35 页 / 共 51 页</span></div>
+<pre class="code">    });
+  } catch (e) {
+    cb({ ok: false, reason: &#39;error&#39;, err: e });
+  }
+}
+
+/* ================= 添加到桌面 ================= */
+
+/** 引导用户将小游戏添加到手机桌面 */
+function addToDesktop(onResult) {
+  const cb = onResult || function () {};
+  if (!api.addToDesktop) { cb({ ok: false, reason: &#39;unsupported&#39; }); return; }
+  try {
+    tt.addToDesktop({
+      success: (res) =&gt; cb({ ok: true, res }),
+      fail: (res) =&gt; cb({ ok: false, reason: &#39;fail&#39;, res }),
+    });
+  } catch (e) {
+    cb({ ok: false, reason: &#39;error&#39;, err: e });
+  }
+}
+
+/* ================= 内购（需版号，默认隐藏入口） ================= */
+
+/**
+ * 购买金币（道具直购）。仅当 PLATFORM.ENABLE_IAP=true 且宿主支持时发起。
+ * onResult({ok:true}) 支付成功（发货以服务端回调为准，此处仅做客户端到账）。
+ */
+function buyCoins(onResult) {
+  const cb = onResult || function () {};
+  if (!PLATFORM.ENABLE_IAP || !api.iap) { cb({ ok: false, reason: &#39;unsupported&#39; }); return; }
+  const p = PLATFORM.IAP;
+  try {
+    tt.requestMidasPaymentGameItem({
+      buyQuantity: p.coins,      // 购买数量
+      zoneId: p.zoneId,          // 游戏分区
+      currencyType: &#39;CNY&#39;,
+      platform: &#39;android&#39;,
+      productId: p.productId,    // 道具 ID
+      goodsPrice: p.priceFen,    // 道具价格（分）
+      outTradeNo: &#39;gc&#39; + Date.now() + Math.floor(Math.random() * 10000), // 商户订单号
+      attach: &#39;coins&#39;,
+      success: (res) =&gt; cb({ ok: true, res }),
+      fail: (res) =&gt; cb({ ok: false, reason: &#39;fail&#39;, res }),
+    });
+  } catch (e) {
+    cb({ ok: false, reason: &#39;error&#39;, err: e });
+  }
+}
+</pre>
+</div>
+<div class="page">
+<div class="hdr"><span>引力方块游戏软件V1.0 源程序</span><span>第 36 页 / 共 51 页</span></div>
+<pre class="code">/* ================= 通用确认弹窗 ================= */
+
+/** tt.showModal 封装；宿主不支持弹窗时直接按「确认」处理（降级） */
+function confirm(title, content, cb) {
+  const done = (ok) =&gt; { try { cb(ok); } catch (e) { /* 忽略 */ } };
+  try {
+    if (api.showModal) {
+      tt.showModal({
+        title: title,
+        content: content,
+        confirmText: &#39;确定&#39;,
+        cancelText: &#39;取消&#39;,
+        success: (res) =&gt; done(!!(res &amp;&amp; res.confirm)),
+        fail: () =&gt; done(false),
+      });
+      return;
+    }
+  } catch (e) { /* 走降级 */ }
+  done(true);
+}
+
+module.exports = {
+  api,
+  init,
+  onShow,
+  // 钱包
+  getCoins, addCoins, spendCoins,
+  // 侧边栏复访
+  getSidebarState, goSidebar, claimSidebarReward,
+  // 广告
+  showRewardedAd, showInterstitialAd,
+  // 订阅消息 / 桌面 / 内购
+  requestSubscribe, addToDesktop, buyCoins,
+  // 工具
+  confirm,
+};
+/* ======== 文件: js/rank.js ======== */
+/**
+ * 排行榜模块
+ * - 本机排行：tt.setStorageSync 持久化 TOP10（始终可用）
+ * - 好友排行：tt.setUserCloudStorage 托管分数，开放数据域内拉取好友数据渲染
+ * 所有 tt.* 调用均有守卫，API 不可用时静默降级，不影响游戏本体。
+ */
+const TT = (typeof tt !== &#39;undefined&#39;) ? tt : null;
+
+const KEY_BEST = &#39;gravcube.best&#39;;
+const KEY_LOCAL = &#39;gravcube.localRank&#39;;
+
+function safeGet(key, def) {
+  try {</pre>
+</div>
+<div class="page">
+<div class="hdr"><span>引力方块游戏软件V1.0 源程序</span><span>第 37 页 / 共 51 页</span></div>
+<pre class="code">    if (TT &amp;&amp; TT.getStorageSync) {
+      const v = TT.getStorageSync(key);
+      return (v === &#39;&#39; || v === undefined || v === null) ? def : v;
+    }
+  } catch (e) { /* 忽略存储异常 */ }
+  return def;
+}
+
+function safeSet(key, value) {
+  try {
+    if (TT &amp;&amp; TT.setStorageSync) TT.setStorageSync(key, value);
+  } catch (e) { /* 忽略存储异常 */ }
+}
+
+/** 本机 TOP10 列表 [{score, level, lines, ts}]，按分数降序 */
+function getLocal() {
+  const v = safeGet(KEY_LOCAL, []);
+  return Array.isArray(v) ? v : [];
+}
+
+/** 历史最高分 */
+function getBest() {
+  const v = safeGet(KEY_BEST, 0);
+  return typeof v === &#39;number&#39; &amp;&amp; isFinite(v) ? v : 0;
+}
+
+/**
+ * 提交一局成绩
+ * @returns {{isBest:boolean, best:number, local:Array}}
+ */
+function submit(score, level, lines) {
+  const prevBest = getBest();
+  const isBest = score &gt; 0 &amp;&amp; score &gt; prevBest;
+  if (isBest) safeSet(KEY_BEST, score);
+
+  if (score &gt; 0) {
+    const list = getLocal();
+    list.push({ score, level, lines, ts: Date.now() });
+    list.sort((a, b) =&gt; b.score - a.score);
+    safeSet(KEY_LOCAL, list.slice(0, 10));
+  }
+
+  // 云端托管数据：供开放数据域的好友排行榜使用
+  try {
+    if (TT &amp;&amp; TT.setUserCloudStorage) {
+      TT.setUserCloudStorage({
+        KVDataList: [
+          { key: &#39;score&#39;, value: String(score) },
+          { key: &#39;level&#39;, value: String(level) },
+          { key: &#39;lines&#39;, value: String(lines) },</pre>
+</div>
+<div class="page">
+<div class="hdr"><span>引力方块游戏软件V1.0 源程序</span><span>第 38 页 / 共 51 页</span></div>
+<pre class="code">          { key: &#39;update_time&#39;, value: String(Math.floor(Date.now() / 1000)) },
+        ],
+        fail() {},
+      });
+    }
+  } catch (e) { /* 云端不可用时仅保留本机排行 */ }
+
+  return { isBest, best: Math.max(prevBest, score), local: getLocal() };
+}
+
+/* ---------- 开放数据域（好友排行） ---------- */
+
+function getOpenDataContext() {
+  try {
+    if (TT &amp;&amp; TT.getOpenDataContext) return TT.getOpenDataContext();
+  } catch (e) { /* 忽略 */ }
+  return null;
+}
+
+/**
+ * 通知开放数据域渲染好友排行榜
+ * @param width/height 渲染区域尺寸（物理像素）
+ * @returns 共享画布（可能为 null，调用方需判空）
+ */
+function showFriendRank(width, height) {
+  const odc = getOpenDataContext();
+  if (!odc) return null;
+  try {
+    if (odc.postMessage) {
+      odc.postMessage({ type: &#39;renderRank&#39;, width: Math.floor(width), height: Math.floor(height) });
+    }
+  } catch (e) { /* 忽略 */ }
+  return odc.canvas || null;
+}
+
+/** 离开排行榜页面时通知开放数据域清空共享画布 */
+function hideFriendRank() {
+  const odc = getOpenDataContext();
+  if (!odc) return;
+  try {
+    if (odc.postMessage) odc.postMessage({ type: &#39;hide&#39; });
+  } catch (e) { /* 忽略 */ }
+}
+
+/* ---------- 分享 ---------- */
+
+function share(score) {
+  try {
+    if (TT &amp;&amp; TT.shareAppMessage) {
+      TT.shareAppMessage({</pre>
+</div>
+<div class="page">
+<div class="hdr"><span>引力方块游戏软件V1.0 源程序</span><span>第 39 页 / 共 51 页</span></div>
+<pre class="code">        title: score &gt; 0
+          ? `我在《引力方块》拿了 ${score} 分，四向重力你能撑几关？`
+          : &#39;引力方块：方块从中心掉落，重力随机四向，来挑战！&#39;,
+        query: &#39;from=share&#39;,
+        fail() {},
+      });
+    }
+  } catch (e) { /* 忽略 */ }
+}
+
+module.exports = { getLocal, getBest, submit, showFriendRank, hideFriendRank, share };
+/* ======== 文件: js/main.js ======== */
+/**
+ * 主控制器：初始化画布、游戏循环、输入分发、场景切换
+ */
+const GameCore = require(&#39;./gamecore.js&#39;);
+const Render = require(&#39;./render.js&#39;);
+const Input = require(&#39;./input.js&#39;);
+const rank = require(&#39;./rank.js&#39;);
+const platform = require(&#39;./platform.js&#39;);
+const { DIRS, PERP, PLATFORM } = require(&#39;./config.js&#39;);
+
+const TT = (typeof tt !== &#39;undefined&#39;) ? tt : null;
+
+class Main {
+  constructor() {
+    if (!TT || !TT.createCanvas) {
+      throw new Error(&#39;tt API 不可用：本项目需在抖音开发者工具/真机中运行&#39;);
+    }
+    // 首次调用 createCanvas 返回上屏画布
+    this.canvas = TT.createCanvas();
+    this.ctx = this.canvas.getContext(&#39;2d&#39;);
+
+    const info = TT.getSystemInfoSync();
+    this.w = info.windowWidth || 375;
+    this.h = info.windowHeight || 667;
+    this.dpr = Math.min(info.pixelRatio || 2, 3);
+    this.canvas.width = Math.round(this.w * this.dpr);
+    this.canvas.height = Math.round(this.h * this.dpr);
+    this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+
+    this.L = Render.buildLayout(this.w, this.h);
+    this.core = new GameCore();
+
+    this.state = &#39;menu&#39;; // menu | playing | paused | gameover | rank | help | sidebar
+    this.best = rank.getBest();
+    this.localRank = rank.getLocal();
+    this.friendCanvas = null;
+    this.newBest = false;
+    this.fx = [];      // 消行闪光 [{cells, t, dur}]</pre>
+</div>
+<div class="page">
+<div class="hdr"><span>引力方块游戏软件V1.0 源程序</span><span>第 40 页 / 共 51 页</span></div>
+<pre class="code">    this.toast = null; // 浮字 {text, t, dur}
+    this.ptoast = null; // 全局平台提示 {text, t, dur}（所有场景可见）
+    this.last = Date.now();
+    this._rankReturn = &#39;menu&#39;;
+    this.coins = platform.getCoins();
+    this.reviveUsed = false; // 本局是否已用过复活（每局限一次）
+
+    this.input = new Input(TT);
+    this.input.onTap = (x, y) =&gt; this.handleTap(x, y);
+    this.input.onSwipe = (dx, dy, sx, sy) =&gt; this.handleSwipe(dx, dy, sx, sy);
+
+    // 从侧边栏等入口回到前台时刷新金币/状态（侧边栏复访奖励依赖最新 onShow 信息）
+    platform.onShow(() =&gt; { this.coins = platform.getCoins(); });
+
+    // 切后台自动暂停
+    try {
+      if (TT.onHide) TT.onHide(() =&gt; this.autoPause());
+    } catch (e) { /* 忽略 */ }
+    try {
+      if (TT.onError) TT.onError((err) =&gt; console.error(&#39;[game error]&#39;, err));
+    } catch (e) { /* 忽略 */ }
+
+    this._raf = (typeof requestAnimationFrame === &#39;function&#39;)
+      ? requestAnimationFrame
+      : (cb) =&gt; setTimeout(() =&gt; cb(Date.now()), 16);
+    this.loop = this.loop.bind(this);
+    this._raf(this.loop);
+  }
+
+  /* ---------- 场景切换 ---------- */
+
+  autoPause() {
+    if (this.state === &#39;playing&#39;) this.state = &#39;paused&#39;;
+  }
+
+  setState(s) {
+    if (this.state === &#39;rank&#39; &amp;&amp; s !== &#39;rank&#39;) rank.hideFriendRank();
+    this.state = s;
+    if (s === &#39;rank&#39;) this.enterRank();
+  }
+
+  enterRank() {
+    this.localRank = rank.getLocal();
+    this.best = rank.getBest();
+    const A = this.L.rankArea;
+    this.friendCanvas = rank.showFriendRank(A.w * this.dpr, A.h * this.dpr);
+  }
+
+  startGame() {
+    this.core.reset();</pre>
+</div>
+<div class="page">
+<div class="hdr"><span>引力方块游戏软件V1.0 源程序</span><span>第 41 页 / 共 51 页</span></div>
+<pre class="code">    this.fx = [];
+    this.toast = null;
+    this.newBest = false;
+    this.reviveUsed = false;
+    this.state = &#39;playing&#39;;
+  }
+
+  /* ---------- 平台能力（侧边栏/桌面/订阅/广告/内购，详见 js/platform.js） ---------- */
+
+  /** 供渲染/命中检测使用的场景状态 */
+  sceneOpts() {
+    const st = platform.getSidebarState();
+    return {
+      canRevive: this.canRevive(),
+      sidebarSupported: st.supported,
+      sidebarClaimable: st.claimable,
+      sidebarClaimedToday: st.claimedToday,
+    };
+  }
+
+  /** 本局是否还能复活（每局限一次；有广告/金币/内购任一途径即可） */
+  canRevive() {
+    if (this.state !== &#39;gameover&#39; || this.reviveUsed) return false;
+    return platform.api.rewardedAd
+      || platform.getCoins() &gt;= PLATFORM.REVIVE_COIN_COST
+      || (PLATFORM.ENABLE_IAP &amp;&amp; platform.api.iap);
+  }
+
+  /** 全局浮动提示 */
+  notify(msg) {
+    this.ptoast = { text: msg, t: 0, dur: 2200 };
+  }
+
+  /** 复活入口：优先看激励视频；广告不可用则金币复活；金币不足且已开通内购则引导购买 */
+  tryRevive() {
+    if (this.state !== &#39;gameover&#39; || this.reviveUsed) return;
+    if (platform.api.rewardedAd) {
+      this.notify(&#39;正在加载激励视频…&#39;);
+      platform.showRewardedAd((res) =&gt; {
+        if (res.ok) { this.doRevive(&#39;复活成功，继续加油！&#39;); return; }
+        if (res.reason === &#39;notEnded&#39;) { this.notify(&#39;完整观看广告才能复活&#39;); return; }
+        this.reviveByCoins();
+      });
+    } else {
+      this.reviveByCoins();
+    }
+  }
+
+  reviveByCoins() {
+    const cost = PLATFORM.REVIVE_COIN_COST;</pre>
+</div>
+<div class="page">
+<div class="hdr"><span>引力方块游戏软件V1.0 源程序</span><span>第 42 页 / 共 51 页</span></div>
+<pre class="code">    const coins = platform.getCoins();
+    if (coins &gt;= cost) {
+      platform.confirm(&#39;金币复活&#39;, &#39;使用 &#39; + cost + &#39; 金币复活并继续本局？&#39;, (ok) =&gt; {
+        if (!ok) return;
+        if (platform.spendCoins(cost)) {
+          this.coins = platform.getCoins();
+          this.doRevive(&#39;复活成功，继续加油！&#39;);
+        } else {
+          this.notify(&#39;金币不足&#39;);
+        }
+      });
+      return;
+    }
+    if (PLATFORM.ENABLE_IAP &amp;&amp; platform.api.iap) {
+      const p = PLATFORM.IAP;
+      platform.confirm(&#39;金币不足&#39;,
+        &#39;复活需要 &#39; + cost + &#39; 金币（当前 &#39; + coins + &#39;）。花 &#39; +
+        (p.priceFen / 100).toFixed(2) + &#39; 元购买 &#39; + p.coins + &#39; 金币？&#39;,
+        (ok) =&gt; {
+          if (!ok) return;
+          platform.buyCoins((res) =&gt; {
+            if (res.ok) {
+              this.coins = platform.addCoins(p.coins);
+              this.notify(&#39;购买成功&#39;);
+              this.reviveByCoins();
+            } else {
+              this.notify(res.reason === &#39;unsupported&#39; ? &#39;内购未开通&#39; : &#39;购买未完成&#39;);
+            }
+          });
+        });
+      return;
+    }
+    this.notify(&#39;复活失败：广告未就绪且金币不足&#39;);
+  }
+
+  doRevive(msg) {
+    if (this.reviveUsed) return;
+    if (this.core.revive()) {
+      this.reviveUsed = true;
+      this.newBest = false;
+      this.fx = [];
+      this.state = &#39;playing&#39;;
+      this.notify(msg);
+      this.vibrate(20);
+    } else {
+      this.notify(&#39;复活失败&#39;);
+    }
+  }
+
+  /** 免费金币：完整观看激励视频得金币 */</pre>
+</div>
+<div class="page">
+<div class="hdr"><span>引力方块游戏软件V1.0 源程序</span><span>第 43 页 / 共 51 页</span></div>
+<pre class="code">  earnCoinsByAd() {
+    if (!platform.api.rewardedAd) { this.notify(&#39;当前环境不支持激励视频&#39;); return; }
+    this.notify(&#39;正在加载激励视频…&#39;);
+    platform.showRewardedAd((res) =&gt; {
+      if (res.ok) {
+        this.coins = platform.addCoins(PLATFORM.AD_REWARD_COINS);
+        this.notify(&#39;金币 +&#39; + PLATFORM.AD_REWARD_COINS);
+        this.vibrate(15);
+      } else if (res.reason === &#39;notEnded&#39;) {
+        this.notify(&#39;完整观看广告才能领取&#39;);
+      } else {
+        this.notify(&#39;广告未就绪，请稍后再试&#39;);
+      }
+    });
+  }
+
+  /** 侧边栏复访任务面板按钮：可领奖→领奖；否则跳转侧边栏（官方指引的复访动线） */
+  onSidebarAction() {
+    const st = platform.getSidebarState();
+    if (st.claimable) {
+      if (platform.claimSidebarReward()) {
+        this.coins = platform.getCoins();
+        this.notify(&#39;领取成功：金币 +&#39; + PLATFORM.SIDEBAR_REWARD_COINS);
+        this.vibrate(20);
+      } else {
+        this.notify(&#39;今日已领取&#39;);
+      }
+      return;
+    }
+    if (!st.supported) { this.notify(&#39;当前宿主不支持侧边栏&#39;); return; }
+    // 跳转抖音首页侧边栏（审核要求：必须使用 tt.navigateToScene）
+    platform.goSidebar((res) =&gt; {
+      if (!res.ok) this.notify(&#39;跳转侧边栏失败&#39;);
+    });
+  }
+
+  /* ---------- 输入 ---------- */
+
+  handleTap(x, y) {
+    const btns = Render.sceneButtons(this.state, this.L, this.sceneOpts());
+    for (let i = 0; i &lt; btns.length; i++) {
+      const b = btns[i];
+      if (x &gt;= b.x &amp;&amp; x &lt;= b.x + b.w &amp;&amp; y &gt;= b.y &amp;&amp; y &lt;= b.y + b.h) {
+        this.onButton(b.id);
+        return;
+      }
+    }
+    if (this.state === &#39;help&#39; || this.state === &#39;sidebar&#39;) { this.setState(&#39;menu&#39;); return; }
+    if (this.state === &#39;playing&#39;) {
+      const B = this.L.board;</pre>
+</div>
+<div class="page">
+<div class="hdr"><span>引力方块游戏软件V1.0 源程序</span><span>第 44 页 / 共 51 页</span></div>
+<pre class="code">      if (x &gt;= B.x &amp;&amp; x &lt;= B.x + B.size &amp;&amp; y &gt;= B.y &amp;&amp; y &lt;= B.y + B.size) {
+        if (this.core.rotate()) this.vibrate(8);
+      }
+    }
+  }
+
+  handleSwipe(dx, dy, sx, sy) {
+    if (this.state !== &#39;playing&#39; || !this.core.canControl()) return;
+    const B = this.L.board;
+    // 仅响应从棋盘区域起始的滑动
+    if (!(sx &gt;= B.x &amp;&amp; sx &lt;= B.x + B.size &amp;&amp; sy &gt;= B.y &amp;&amp; sy &lt;= B.y + B.size)) return;
+
+    const dir = this.core.current.dir;
+    const d = DIRS[dir];
+    const p = PERP[dir];
+    const dotG = dx * d.x + dy * d.y;   // 沿重力分量
+    const dotP = dx * p.x + dy * p.y;   // 垂直分量
+
+    if (Math.abs(dotG) &gt;= Math.abs(dotP)) {
+      if (dotG &gt; 30) { this.core.hardDrop(); this.vibrate(15); }
+    } else {
+      // 按格子实际尺寸换算：拖动约一个格宽 = 移动一格（适配任意棋盘尺寸）
+      const steps = Math.min(8, Math.max(1, Math.round(Math.abs(dotP) / B.cell)));
+      const sign = dotP &gt; 0 ? 1 : -1;
+      let moved = false;
+      for (let i = 0; i &lt; steps; i++) { if (this.core.movePerp(sign)) moved = true; else break; }
+      if (moved) this.vibrate(5);
+    }
+  }
+
+  onButton(id) {
+    switch (id) {
+      case &#39;start&#39;:
+      case &#39;retry&#39;:
+      case &#39;restart&#39;:
+        this.startGame();
+        break;
+      case &#39;resume&#39;:
+        this.state = &#39;playing&#39;;
+        break;
+      case &#39;pause&#39;:
+        if (this.state === &#39;playing&#39;) this.state = &#39;paused&#39;;
+        break;
+      case &#39;tomenu&#39;:
+        this.setState(&#39;menu&#39;);
+        break;
+      case &#39;rank&#39;:
+        this._rankReturn = (this.state === &#39;gameover&#39;) ? &#39;gameover&#39; : &#39;menu&#39;;
+        this.setState(&#39;rank&#39;);
+        break;</pre>
+</div>
+<div class="page">
+<div class="hdr"><span>引力方块游戏软件V1.0 源程序</span><span>第 45 页 / 共 51 页</span></div>
+<pre class="code">      case &#39;back&#39;:
+        this.setState(this._rankReturn || &#39;menu&#39;);
+        break;
+      case &#39;help&#39;:
+        this.setState(&#39;help&#39;);
+        break;
+      case &#39;share&#39;:
+        rank.share(this.core.score);
+        break;
+      /* ---- 平台能力按钮 ---- */
+      case &#39;sidebarGift&#39;:
+        this.setState(&#39;sidebar&#39;);
+        break;
+      case &#39;sidebarAction&#39;:
+        this.onSidebarAction();
+        break;
+      case &#39;sidebarClose&#39;:
+        this.setState(&#39;menu&#39;);
+        break;
+      case &#39;desktop&#39;:
+        platform.addToDesktop((res) =&gt; {
+          if (res.ok) this.notify(&#39;已发起添加到桌面&#39;);
+          else this.notify(res.reason === &#39;unsupported&#39; ? &#39;当前环境不支持添加到桌面&#39; : &#39;添加到桌面未完成&#39;);
+        });
+        break;
+      case &#39;subscribe&#39;:
+        platform.requestSubscribe((res) =&gt; {
+          if (res.ok) this.notify(&#39;已订阅消息提醒&#39;);
+          else this.notify(res.reason === &#39;unsupported&#39; ? &#39;当前环境不支持订阅消息&#39; : &#39;订阅未完成&#39;);
+        });
+        break;
+      case &#39;freeCoins&#39;:
+        this.earnCoinsByAd();
+        break;
+      case &#39;revive&#39;:
+        this.tryRevive();
+        break;
+      case &#39;left&#39;:
+        if (this.core.movePerp(-1)) this.vibrate(5);
+        break;
+      case &#39;right&#39;:
+        if (this.core.movePerp(1)) this.vibrate(5);
+        break;
+      case &#39;rotate&#39;:
+        if (this.core.rotate()) this.vibrate(8);
+        break;
+      case &#39;drop&#39;:
+        if (this.core.canControl()) { this.core.hardDrop(); this.vibrate(15); }
+        break;
+      default:</pre>
+</div>
+<div class="page">
+<div class="hdr"><span>引力方块游戏软件V1.0 源程序</span><span>第 46 页 / 共 51 页</span></div>
+<pre class="code">        break;
+    }
+  }
+
+  vibrate(ms) {
+    try {
+      if (ms &gt;= 50 &amp;&amp; TT.vibrateLong) TT.vibrateLong({ fail() {} });
+      else if (TT.vibrateShort) TT.vibrateShort({ fail() {} });
+    } catch (e) { /* 忽略 */ }
+  }
+
+  /* ---------- 事件与特效 ---------- */
+
+  processEvents() {
+    const evs = this.core.drainEvents();
+    for (let i = 0; i &lt; evs.length; i++) {
+      const ev = evs[i];
+      if (ev.type === &#39;clear&#39;) {
+        this.fx.push({ cells: ev.cells, t: 0, dur: 300 });
+        this.toast = { text: ev.count &gt;= 2 ? (&#39;消除 x&#39; + ev.count + &#39;！&#39;) : &#39;消除！&#39;, t: 0, dur: 900 };
+        this.vibrate(20);
+      } else if (ev.type === &#39;levelup&#39;) {
+        this.toast = { text: &#39;第 &#39; + ev.level + &#39; 关 &#183; 速度提升！&#39;, t: 0, dur: 1400 };
+        this.vibrate(30);
+      } else if (ev.type === &#39;gameover&#39;) {
+        const r = rank.submit(this.core.score, this.core.level, this.core.lines);
+        this.best = r.best;
+        this.localRank = r.local;
+        this.newBest = r.isBest;
+        this.reviveUsed = false;
+        this.vibrate(80);
+        this.setState(&#39;gameover&#39;);
+        // 插屏广告：游戏结束是自然停顿点（platform 内部有最小间隔节流）
+        platform.showInterstitialAd();
+      }
+    }
+  }
+
+  updateFx(dt) {
+    for (let i = this.fx.length - 1; i &gt;= 0; i--) {
+      this.fx[i].t += dt;
+      if (this.fx[i].t &gt;= this.fx[i].dur) this.fx.splice(i, 1);
+    }
+    if (this.toast) {
+      this.toast.t += dt;
+      if (this.toast.t &gt;= this.toast.dur) this.toast = null;
+    }
+    if (this.ptoast) {
+      this.ptoast.t += dt;
+      if (this.ptoast.t &gt;= this.ptoast.dur) this.ptoast = null;</pre>
+</div>
+<div class="page">
+<div class="hdr"><span>引力方块游戏软件V1.0 源程序</span><span>第 47 页 / 共 51 页</span></div>
+<pre class="code">    }
+  }
+
+  /* ---------- 主循环 ---------- */
+
+  loop() {
+    const now = Date.now();
+    const dt = Math.min(100, now - this.last);
+    this.last = now;
+
+    if (this.state === &#39;playing&#39;) {
+      this.core.update(dt);
+      this.processEvents();
+    }
+    this.updateFx(dt);
+    Render.draw(this);
+    this._raf(this.loop);
+  }
+}
+
+module.exports = Main;
+/* ======== 文件: openDataContext/index.js ======== */
+/**
+ * 开放数据域（好友排行榜）
+ * 运行在独立的 JS 上下文中，只能使用 tt 的开放数据相关 API：
+ *   tt.getSharedCanvas / tt.onMessage / tt.getFriendCloudStorage
+ * 主域通过 postMessage({type:&#39;renderRank&#39;, width, height}) 请求渲染。
+ */
+const sharedCanvas = tt.getSharedCanvas();
+const ctx = sharedCanvas.getContext(&#39;2d&#39;);
+
+let areaW = 300;
+let areaH = 400;
+let friends = [];
+let renderToken = 0; // 防止异步头像回调渲染过期数据
+
+tt.onMessage((msg) =&gt; {
+  if (!msg) return;
+  if (msg.type === &#39;renderRank&#39;) {
+    areaW = Math.max(60, msg.width || sharedCanvas.width || 300);
+    areaH = Math.max(60, msg.height || sharedCanvas.height || 400);
+    sharedCanvas.width = areaW;
+    sharedCanvas.height = areaH;
+    fetchFriends();
+  } else if (msg.type === &#39;hide&#39;) {
+    renderToken++;
+    ctx.clearRect(0, 0, sharedCanvas.width, sharedCanvas.height);
+  }
+});
+</pre>
+</div>
+<div class="page">
+<div class="hdr"><span>引力方块游戏软件V1.0 源程序</span><span>第 48 页 / 共 51 页</span></div>
+<pre class="code">function fetchFriends() {
+  const token = ++renderToken;
+  drawLoading(token);
+  try {
+    if (typeof tt.getFriendCloudStorage !== &#39;function&#39;) {
+      drawEmpty(token, &#39;当前基础库不支持好友数据&#39;);
+      return;
+    }
+    tt.getFriendCloudStorage({
+      keyList: [&#39;score&#39;, &#39;level&#39;, &#39;lines&#39;],
+      success(res) {
+        if (token !== renderToken) return;
+        friends = normalize(res &amp;&amp; res.data ? res.data : []);
+        renderList(token);
+        loadAvatars(token);
+      },
+      fail() {
+        if (token !== renderToken) return;
+        drawEmpty(token, &#39;暂无好友数据，邀请好友一起玩吧&#39;);
+      },
+    });
+  } catch (e) {
+    if (token === renderToken) drawEmpty(token, &#39;好友数据不可用&#39;);
+  }
+}
+
+function normalize(list) {
+  const rows = [];
+  for (let i = 0; i &lt; list.length; i++) {
+    const it = list[i];
+    let score = 0, level = 0, lines = 0;
+    const kvs = it.KVDataList || [];
+    for (let j = 0; j &lt; kvs.length; j++) {
+      const kv = kvs[j];
+      if (kv.key === &#39;score&#39;) score = parseInt(kv.value, 10) || 0;
+      else if (kv.key === &#39;level&#39;) level = parseInt(kv.value, 10) || 0;
+      else if (kv.key === &#39;lines&#39;) lines = parseInt(kv.value, 10) || 0;
+    }
+    rows.push({
+      nickname: it.nickname || &#39;神秘玩家&#39;,
+      avatarUrl: it.avatarUrl || &#39;&#39;,
+      score: score,
+      level: level,
+      lines: lines,
+      img: null,
+    });
+  }
+  rows.sort((a, b) =&gt; b.score - a.score);
+  return rows.slice(0, 30);
+}</pre>
+</div>
+<div class="page">
+<div class="hdr"><span>引力方块游戏软件V1.0 源程序</span><span>第 49 页 / 共 51 页</span></div>
+<pre class="code">
+function loadAvatars(token) {
+  if (typeof tt.createImage !== &#39;function&#39;) return;
+  for (let i = 0; i &lt; friends.length; i++) {
+    const f = friends[i];
+    if (!f.avatarUrl || f.img) continue;
+    try {
+      const img = tt.createImage();
+      img.onload = () =&gt; {
+        f.img = img;
+        if (token === renderToken) renderList(token);
+      };
+      img.onerror = () =&gt; { /* 头像加载失败则显示首字 */ };
+      img.src = f.avatarUrl;
+    } catch (e) { /* 忽略 */ }
+  }
+}
+
+/* ---------- 绘制 ---------- */
+
+function drawLoading(token) {
+  ctx.clearRect(0, 0, areaW, areaH);
+  centerText(&#39;好友排行加载中…&#39;, areaH / 2, 14, &#39;rgba(255,255,255,0.6)&#39;, false);
+}
+
+function drawEmpty(token, msg) {
+  ctx.clearRect(0, 0, areaW, areaH);
+  centerText(&#39;好友排行&#39;, 30, 15, &#39;#ffd54f&#39;, true);
+  centerText(msg, areaH / 2, 13, &#39;rgba(255,255,255,0.55)&#39;, false);
+}
+
+function centerText(str, y, size, color, bold) {
+  ctx.save();
+  ctx.font = (bold ? &#39;bold &#39; : &#39;&#39;) + size + &#39;px sans-serif&#39;;
+  ctx.fillStyle = color;
+  ctx.textAlign = &#39;center&#39;;
+  ctx.textBaseline = &#39;middle&#39;;
+  ctx.fillText(str, areaW / 2, y);
+  ctx.restore();
+}
+
+function renderList(token) {
+  ctx.clearRect(0, 0, areaW, areaH);
+  if (!friends.length) { drawEmpty(token, &#39;暂无好友数据，邀请好友一起玩吧&#39;); return; }
+
+  ctx.save();
+  ctx.font = &#39;bold 15px sans-serif&#39;;
+  ctx.fillStyle = &#39;#ffd54f&#39;;
+  ctx.textAlign = &#39;left&#39;;
+  ctx.textBaseline = &#39;middle&#39;;</pre>
+</div>
+<div class="page">
+<div class="hdr"><span>引力方块游戏软件V1.0 源程序</span><span>第 50 页 / 共 51 页</span></div>
+<pre class="code">  ctx.fillText(&#39;好友排行&#39;, 12, 22);
+  ctx.restore();
+
+  const rowH = Math.min(44, Math.max(28, (areaH - 44) / Math.min(friends.length, 8)));
+  const n = Math.min(friends.length, Math.floor((areaH - 40) / rowH));
+  for (let i = 0; i &lt; n; i++) {
+    const f = friends[i];
+    const y = 44 + i * rowH + rowH / 2;
+    const cx = 14;
+
+    // 名次
+    ctx.save();
+    ctx.font = &#39;bold 14px sans-serif&#39;;
+    ctx.textAlign = &#39;left&#39;;
+    ctx.textBaseline = &#39;middle&#39;;
+    ctx.fillStyle = i === 0 ? &#39;#ffd54f&#39; : (i === 1 ? &#39;#cfd8dc&#39; : (i === 2 ? &#39;#ffab40&#39; : &#39;rgba(255,255,255,0.5)&#39;));
+    ctx.fillText(String(i + 1), cx, y);
+    ctx.restore();
+
+    // 头像
+    const ax = cx + 26, ar = rowH * 0.34;
+    if (f.img) {
+      try {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(ax + ar, y, ar, 0, Math.PI * 2);
+        ctx.clip();
+        ctx.drawImage(f.img, ax, y - ar, ar * 2, ar * 2);
+        ctx.restore();
+      } catch (e) { drawAvatarFallback(f, ax + ar, y, ar); }
+    } else {
+      drawAvatarFallback(f, ax + ar, y, ar);
+    }
+
+    // 昵称
+    ctx.save();
+    ctx.font = &#39;13px sans-serif&#39;;
+    ctx.fillStyle = &#39;rgba(255,255,255,0.9)&#39;;
+    ctx.textAlign = &#39;left&#39;;
+    ctx.textBaseline = &#39;middle&#39;;
+    const nameX = ax + ar * 2 + 10;
+    let nick = f.nickname;
+    if (nick.length &gt; 7) nick = nick.slice(0, 7) + &#39;…&#39;;
+    ctx.fillText(nick, nameX, y - 7);
+    ctx.font = &#39;10px sans-serif&#39;;
+    ctx.fillStyle = &#39;rgba(255,255,255,0.45)&#39;;
+    ctx.fillText(&#39;第&#39; + f.level + &#39;关 &#183; &#39; + f.lines + &#39;行&#39;, nameX, y + 9);
+    ctx.restore();
+
+    // 分数</pre>
+</div>
+<div class="page">
+<div class="hdr"><span>引力方块游戏软件V1.0 源程序</span><span>第 51 页 / 共 51 页</span></div>
+<pre class="code">    ctx.save();
+    ctx.font = &#39;bold 15px sans-serif&#39;;
+    ctx.fillStyle = &#39;#ffffff&#39;;
+    ctx.textAlign = &#39;right&#39;;
+    ctx.textBaseline = &#39;middle&#39;;
+    ctx.fillText(String(f.score), areaW - 14, y);
+    ctx.restore();
+  }
+}
+
+function drawAvatarFallback(f, cx, cy, r) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fillStyle = &#39;rgba(255,255,255,0.15)&#39;;
+  ctx.fill();
+  ctx.font = &#39;bold &#39; + r + &#39;px sans-serif&#39;;
+  ctx.fillStyle = &#39;rgba(255,255,255,0.8)&#39;;
+  ctx.textAlign = &#39;center&#39;;
+  ctx.textBaseline = &#39;middle&#39;;
+  ctx.fillText((f.nickname || &#39;?&#39;).slice(0, 1), cx, cy + 1);
+  ctx.restore();
+}</pre>
+</div>
+</body></html>

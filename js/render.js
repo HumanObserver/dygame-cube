@@ -276,7 +276,7 @@ function drawMenu(ctx, L, main, t) {
   }
 
   text(ctx, '引力方块', w / 2, h * 0.30, 42 * s, '#ffffff', 'center', true);
-  text(ctx, '四向重力 · 俄罗斯方块变体', w / 2, h * 0.30 + 30 * s, 14 * s, 'rgba(255,255,255,0.65)', 'center', false);
+  text(ctx, '四向重力 · 方块消除玩法', w / 2, h * 0.30 + 30 * s, 14 * s, 'rgba(255,255,255,0.65)', 'center', false);
   text(ctx, '最高分 ' + main.best + ' · 金币 ' + (main.coins || 0), w / 2, h * 0.50 - 22 * s,
     15 * s, 'rgba(255,215,0,0.9)', 'center', true);
 
