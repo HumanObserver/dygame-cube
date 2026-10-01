@@ -163,6 +163,28 @@ node web-preview/record.cjs --seed 35 --startlevel 3 --finish 45000 --name demo-
 node web-preview/verify.cjs --file videos/gravity-cube-20261001.mp4 --times 43,74,77,106 --mode play --rate 8
 ```
 
+### 本轮成片（2026-10-01 · 固定步长录制 `--fixed 1`）
+
+[web-preview/videos/gravity-cube-20261001-3.mp4](web-preview/videos/gravity-cube-20261001-3.mp4)
+— 1080×1920 / 2 分 27 秒 / 17.1 MB，`--seed 1004 --finish 100000`。实录战绩与离线仿真**逐位一致**（`narrationOk / levelMatch / linesMatch / skillKillsMatch / featuresOk` 全 true）：2290 分、53 块、消 4 行、炮台开火 9 次击落 15 格、共鸣引爆 2 次带走 8 格、技能合计击落 23 格、半侧沉降 117 格、属性牌 2 张（双联炮管 → 共振行列）——结尾配音报的就是画面上这几个数字。
+
+对局内看点（视频时间 ≈ 对局时间 +4.7s）：
+
+| 对局时刻 | 看点 |
+|---|---|
+| 28.3s / 35.4s / 38.4s / 55.5s | 四次消行，其中 38.4s 与 **L1→L2 过关清场**同帧、55.5s 与**共鸣引爆**同帧 |
+| 62.8s / 64.6s / 66.6s×3 | **炮台三连射**，66.6s 的三连与第二次共鸣同刻（补射各自独立成事件、独立计分） |
+| 68.4s | **L2→L3 过关清场**，棋盘清空重开、积分累加 |
+| 71.8s / 78.9s / 96.4s | 炮台命中爆点：白热核心 + 双层冲击波 + 8 道火花 + 震屏 |
+| 101.6s / 105.6s | **属性牌三选一**两次：双联炮管 → 共振行列（牌面停留 6.5s，对局暂停） |
+| 105.2s | 构筑生效后的双发弹幕 + 击落 |
+| 117.3s | 收尾：2290 分 / 第 3 关 / 消 4 行 / 技能 23 格 |
+
+[web-preview/videos/gravity-cube-20261001-4.mp4](web-preview/videos/gravity-cube-20261001-4.mp4)
+— 1080×1920 / 2 分 29 秒 / 16.8 MB，`--seed 601 --finish 100000`，同样逐位一致：2370 分、54 块、消 3 行（含一次**双消**）、共鸣 4 次带走 18 格、炮台 9 次、技能合计 24 格、沉降 110 格、属性牌 2 张（灵能灌注 → 折射挡板）。看点在 51.7s（消行 + 共鸣同帧）、76.4s（过关清场 + 共鸣 + 炮台三事同刻）、101.4s（共鸣引爆立刻招出炮台补射）。
+
+> 两条都是「选种 → 配音 → 固定步长录制 → 交叉校验」一条龙产出，归档在 `web-preview/videos/`（该目录已被 `.gitignore` 忽略，成片不入库）。
+
 ### 本轮（v1.3.1）复查用 demo
 
 [web-preview/videos/demo-gravity-cube-v131.mp4](web-preview/videos/demo-gravity-cube-v131.mp4)
@@ -193,8 +215,19 @@ node web-preview/verify.cjs --file videos/gravity-cube-20261001.mp4 --times 43,7
 [web-preview/videos/gravity-cube-20261001.mp4](web-preview/videos/gravity-cube-20261001.mp4)
 （1080×1920 / 2 分 38 秒 / 15.7 MB。实录战绩：2605 分、第 3 关、消 4 行、55 块；过关清场 2 次、炮台开火 6 次击落 27 格、共鸣引爆 2 次带走 18 格、半侧沉降 85 格、属性牌三选一 2 次（穿甲弹头 → 双联炮管，第 109 秒的双发弹幕就是它生效的样子），结尾播报的就是这几个真实数字。）
 
-> **一致性保证**：`(gameSeed, botSeed, finishAfterMs)` 相同 ⇒ 离线仿真与浏览器录制逐位一致（属性牌暂停时长不计入对局时长，改 `--cardhold` 不会改局面）。
-> `record.cjs` 结束时把实录的分数 / 关卡 / 消行数与 `seeds.json` 比对，输出 `narrationOk` / `levelMatch` / `linesMatch` / `featuresOk`；
+> **一致性保证（录制端固定步长）**：`(gameSeed, botSeed, finishAfterMs)` 相同 ⇒ 离线仿真与浏览器录制逐位一致（属性牌暂停时长不计入对局时长，改 `--cardhold` 不会改局面）。
+>
+> headless Edge（`--disable-gpu`）录制时只有 ~30fps：帧间隔 ≈33ms，还受 MediaRecorder 负载抖动，
+> 而 `js/main.js:474-479` 的循环按真实 dt 推进（钳到 100ms）。真实 dt 下 bot 的决策时机与仿真（`DT = 16.7`）错位，
+> 落子位置就会漂——实测 seed 1004 用真实帧间隔录出来是 **2027 分 / 技能 19 格**，而仿真与配音是 2290 / 23 格。
+> 所以 `web-preview/recorder.js` 的驱动器（默认 `fixed=1`）把对局改成「累计真实时间 → 每 16.7ms 喂一次 `core.update`
+> → drain 事件 → `bot.tick(虚拟时钟)`」，与 `simulate.cjs` 的主循环同构；`core.update` 在 main 的循环里被架空（只计数），
+> bot 的 `setInterval` 也停掉，避免两套时钟打架。卡顿时**不追帧**（`vslow` 计数，宁可慢放不快进），
+> 因此局面序列只由种子决定。`--fixed 0` 退回真实帧间隔（战绩会漂，出片不要用）。
+>
+> `record.cjs` 结束时把实录的分数 / 关卡 / 消行数 / 技能击落格数与 `seeds.json` 比对，
+> 输出 `narrationOk` / `levelMatch` / `linesMatch` / `skillKillsMatch` / `featuresOk`；
+> `narrationOk` = 分数同百位桶 **且** 关卡、消行、技能格数与画面完全一致（结尾配音会逐字报出这几个数字）。
 > 出现 false 说明规则或 bot 权重改过，需要重跑第 1、2 步再录，否则结尾配音的战绩数字会对不上画面。
 
 ## 在抖音开发者工具中运行

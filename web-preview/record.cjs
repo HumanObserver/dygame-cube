@@ -5,6 +5,7 @@
  * 用法：
  *   node web-preview/record.cjs --seed 144 [--finish 110000] [--name gameplay-144]
  *                               [--nobgm] [--cardhold 5200] [--timeout 300000] [--keep]
+ *                               [--fixed 1|0]  1=固定步长（实录与 simulate.cjs 逐位一致，默认）
  * 依赖：Microsoft Edge（headless=new），Node 18+
  * 输出：stdout 最后一行为 JSON 摘要 {ok, file, ...}；退出码 0=成功
  */
@@ -35,6 +36,8 @@ const CARD_HOLD = parseInt(argVal('--cardhold', '6500'), 10); // 属性牌停留
 /* 跳过前面几关：直接从第 N 关开局（积分按「上一关合格分」累加口径接着算），
  * 技能方块立刻登场，适合做新特性演示视频 */
 const START_LEVEL = parseInt(argVal('--startlevel', '1'), 10);
+/* 固定步长驱动：1=浏览器实录与 simulate.cjs 逐位一致（默认），0=沿用真实帧间隔（战绩会漂） */
+const FIXED = argVal('--fixed', '1');
 
 /* ---------- 构建 bundle ---------- */
 function buildBundle() {
@@ -103,6 +106,7 @@ function startServer() {
             durationMs: q.get('durationMs'),
             audioPeak: q.get('audioPeak'),
             mime: q.get('mime'),
+            fixed: FIXED === '1',
             stats: {
               score: q.get('score'),
               level: q.get('level'),
@@ -145,6 +149,7 @@ function launchEdge(port) {
     bgm: NOBGM ? '0' : '1',
     cardhold: String(CARD_HOLD),
     startlevel: String(START_LEVEL),
+    fixed: FIXED,
   });
   const url = 'http://127.0.0.1:' + port + '/record.html?' + qs.toString();
   const args = [
@@ -206,12 +211,23 @@ function finish(code) {
           score: exp.score, level: exp.level, lines: exp.lines,
           skillKills: exp.skillKills, cards: exp.cards, build: exp.build,
         };
-        savedSummary.narrationOk = bucketOk && got >= exp.score - 99;
+        const skillGot = parseInt(savedSummary.stats.skillKills, 10);
         savedSummary.levelMatch = parseInt(savedSummary.stats.level, 10) === exp.level;
         savedSummary.linesMatch = parseInt(savedSummary.stats.lines, 10) === exp.lines;
+        /* 配音会逐字说出「技能带走 N 格」→ 这一项必须精确相等 */
+        savedSummary.skillKillsMatch = skillGot === exp.skillKills;
+        /* 配音可信 = 分数同百位桶 + 关卡/消行/技能格数与画面完全一致 */
+        savedSummary.narrationOk = bucketOk && got >= exp.score - 99 &&
+          savedSummary.levelMatch && savedSummary.linesMatch && savedSummary.skillKillsMatch;
         /* 新特性是否真的出镜了：技能击落格数 > 0 且属性牌张数不少于仿真预期 */
-        savedSummary.featuresOk = parseInt(savedSummary.stats.skillKills, 10) > 0 &&
+        savedSummary.featuresOk = skillGot > 0 &&
           parseInt(savedSummary.stats.cards, 10) >= (exp.cards || 0);
+        if (!savedSummary.narrationOk) {
+          console.error('[record] ⚠ 配音数字与画面不符：实录 ' + got + '分/' + savedSummary.stats.level +
+            '关/' + savedSummary.stats.lines + '行/技能' + skillGot + '格 vs seeds.json ' + exp.score +
+            '分/' + exp.level + '关/' + exp.lines + '行/技能' + exp.skillKills + '格（fixed=' + FIXED +
+            '）→ 见 README「实录与仿真逐位一致」，或按实录数字重生 gameover-' + SEED + ' 配音');
+        }
       }
     } catch (e) { /* seeds.json 缺失则跳过校验 */ }
   }

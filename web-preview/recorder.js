@@ -8,7 +8,10 @@
  *  3. MediaRecorder 录制（H.264 + AAC → MP4），结束后 POST /__recording 上传
  *  4. 场景导演：菜单 → AI 对战（AutoPlayer bot）→ 结算配音 → 排行榜 → 回菜单 → 上传
  *
- * URL 参数：?seed=15&botseed=777&finish=60000&name=xxx&bgm=0
+ * URL 参数：?seed=15&botseed=777&finish=60000&name=xxx&bgm=0&fixed=1
+ *   fixed=1（默认）：对局用固定步长驱动器推进（STEP_MS 与 simulate.cjs 的 DT 一致），
+ *   bot 也按同一步长 tick 虚拟时钟 → 浏览器实录与离线仿真逐位一致（配音数字可信）；
+ *   fixed=0：沿用真实帧间隔（js/main.js 的 dt），录制负载会让落子时机抖动，战绩与仿真对不上。
  * 完成标记：document.title = 'RECORDING-DONE OK'（record.cjs 轮询用）
  */
 (function () {
@@ -24,6 +27,12 @@
   var CARD_HOLD_MS = parseInt(params.get('cardhold') || '6500', 10);
   /* 跳过前面几关：直接从第 N 关开局（技能方块立刻登场，适合演示新特性） */
   var START_LEVEL = parseInt(params.get('startlevel') || '1', 10);
+  /* 固定步长驱动（默认开）：录制时 MediaRecorder 会让帧间隔抖动到 100ms 上限，
+   * 真实 dt 下 bot 的决策时机与 simulate.cjs（DT=16.7）错位 → 实录战绩与配音数字对不上。
+   * 改成「按真实时间累计、以固定步长喂 core」后，局面只由种子决定，实录 == 仿真。
+   * 卡顿时不追帧（宁可慢放，不快进），所以长卡顿会让画面变慢但战绩不变。 */
+  var FIXED_STEP = params.get('fixed') !== '0';
+  var STEP_MS = 16.7; // 必须与 simulate.cjs 的 DT 一致
   var W = 1080, H = 1920;
 
   var G = null;               // window.__game
@@ -40,6 +49,8 @@
   var audioPeak = 0, peakBuf = null;
   var finalStats = null;
   var bot = null;
+  var coreStepper = null;   // 真实 core.update（固定步长驱动器用它喂 STEP_MS）
+  var vnow = 0, vacc = 0, vlast = 0, vslow = 0; // 虚拟对局时钟 / 累计真实时间 / 上一帧时刻 / 不追帧次数
   var clearAlt = false;
   var status = 'boot';
   var errors = [];
@@ -66,6 +77,9 @@
         rec: recorder ? recorder.state : 'none',
         gs: window.__game ? window.__game.state : 'none',
         upd: updCount,
+        /* 驱动器观测：v=虚拟对局时钟(ms) slow=因卡顿丢弃欠帧的次数 */
+        v: Math.round(vnow),
+        slow: vslow,
         hint: core ? Math.round(core.hintTimer) : -1,
         phase: core ? core.phase : '-',
         piece: core && core.current ? core.current.type : '-',
@@ -547,6 +561,31 @@
 
   /* ============ 场景导演 ============ */
 
+  /* ============ 固定步长驱动器（fixed=1，默认） ============ */
+
+  /** 与 simulate.cjs 的主循环同构：累加真实时间 → 每次喂 STEP_MS → drain → bot.tick(虚拟时钟) */
+  function drive() {
+    requestAnimationFrame(drive);
+    if (!FIXED_STEP || !bot || !coreStepper) return;
+    var now = Date.now();
+    var real = Math.min(100, now - vlast); // 与 js/main.js 的 dt 口径一致
+    vlast = now;
+    if (G.state === 'playing' || G.state === 'cards') {
+      vacc += real;
+      var n = 0;
+      while (vacc >= STEP_MS && n < 8) {
+        vacc -= STEP_MS; vnow += STEP_MS;
+        coreStepper(STEP_MS);            // 选牌暂停时 core 自己会挡住（pendingCards）
+        try { G.processEvents(); } catch (e) { errors.push('drive: ' + e.message); }
+        if (bot.phase !== 'over') { try { bot.tick(vnow); } catch (e) { errors.push('tick: ' + e.message); } }
+        n++;
+      }
+      if (n >= 8) { vacc = 0; vslow++; } // 卡顿过多：丢弃欠帧，慢放而不快进
+    } else if (G.state === 'gameover' && bot.phase !== 'over') {
+      try { bot.tick(vnow); } catch (e) { /* 结算钩子只需触发一次 */ }
+    }
+  }
+
   function waitGame() {
     return new Promise(function (resolve, reject) {
       var t0 = Date.now();
@@ -610,6 +649,8 @@
         },
       },
     });
+    /* fixed=1：bot 改由驱动器按同步步长 tick（决策时机 = 局面步进），停掉真实时间轮询 */
+    if (FIXED_STEP && bot.stop) bot.stop();
   }
 
   function tail() {
@@ -662,10 +703,15 @@
     setStatus('boot');
     waitGame().then(function () {
       G = window.__game;
-      // 运行时监测：包装 core.update 计数（定位卡死；不改游戏源码）
+      // 运行时监测 + 固定步长接管：包装 core.update（不改游戏源码）
       try {
         var origUpdate = G.core.update.bind(G.core);
-        G.core.update = function (dt) { updCount++; return origUpdate(dt); };
+        coreStepper = origUpdate;
+        G.core.update = function (dt) {
+          updCount++;
+          if (FIXED_STEP) return;         // 局面只由驱动器按 STEP_MS 推进，真实 dt 不参与
+          return origUpdate(dt);
+        };
       } catch (e) { /* noop */ }
       initAudio();
       return loadNarration();
@@ -689,6 +735,9 @@
       G.core.rng = AutoPlayer.mulberry32(SEED >>> 0);
       installEventDirector();     // 炮台/共鸣/沉降/技能登场 的音效与解说
       attachBot();
+      /* 驱动器要在开局那一刻就位：vnow 从 0 起算，与 sim 的 clock 起点一致（fixed=0 时空转） */
+      vlast = Date.now();
+      requestAnimationFrame(drive);
       sfxClick();
       G.onButton('start');
       if (START_LEVEL > 1) skipToLevel(START_LEVEL); // 跳过前面几关，直接演示技能/属性牌
