@@ -3,12 +3,12 @@
     "intro": {
       "id": "intro",
       "file": "intro.mp3",
-      "text": "这个方块游戏有点怪，方块居然从棋盘正中间往下掉，重力还会随机变方向！第一次玩引力方块，看看我能打到什么程度！"
+      "text": "方块游戏更新版本了！这次炮台、共鸣、属性牌全上线，直接开打！"
     },
     "rules": {
       "id": "rules",
       "file": "rules.mp3",
-      "text": "规则很简单：跟着箭头提示走，填满一整行或者一整列就能消除。累计分数过关升级，速度会越来越快！"
+      "text": "老规则：方块从正中间出生、重力随机变，填满一行或一列就消除，分数达标就过关！"
     },
     "clear1": {
       "id": "clear1",
@@ -33,7 +33,7 @@
     "levelup": {
       "id": "levelup",
       "file": "levelup.mp3",
-      "text": "升级啦！下落速度变快了，看好了！"
+      "text": "过关！棋盘整个清空重开，但分数不清零，速度更快、提示更短！"
     },
     "danger": {
       "id": "danger",
@@ -43,222 +43,97 @@
     "rank": {
       "id": "rank",
       "file": "rank.mp3",
-      "text": "这个分数直接冲上排行榜！你觉得你能打得过我吗？"
+      "text": "这个分数直接冲上排行榜！新版本你也来试试，看能不能打过我？"
     },
     "outro": {
       "id": "outro",
       "file": "outro.mp3",
       "text": "关注我，每天带你解锁一个好玩的抖音小游戏，我们明天见！"
     },
-    "gameover-32": {
-      "id": "gameover-32",
-      "file": "gameover-32.mp3",
-      "text": "哎呀，还是被堵住了！这局拿了一千一百多分，撑到第二关，消了四行，表现还不错吧！"
-    },
-    "gameover-35": {
-      "id": "gameover-35",
-      "file": "gameover-35.mp3",
-      "text": "哎呀，还是被堵住了！这局拿了一千多分，撑到第二关，消了四行，表现还不错吧！"
-    },
-    "gameover-56": {
-      "id": "gameover-56",
-      "file": "gameover-56.mp3",
-      "text": "哎呀，还是被堵住了！这局拿了一千二百多分，撑到第二关，消了四行，表现还不错吧！"
-    },
-    "gameover-8": {
-      "id": "gameover-8",
-      "file": "gameover-8.mp3",
-      "text": "哎呀，还是被堵住了！这局拿了九百多分，撑到第二关，消了三行，表现还不错吧！"
-    },
     "gameover-15": {
       "id": "gameover-15",
       "file": "gameover-15.mp3",
-      "text": "哎呀，还是被堵住了！这局拿了一千二百多分，撑到第二关，消了四行，表现还不错吧！"
+      "text": "被堵住啦！两千一百多分、第三关、消四行，技能带走十五格、拿到两张属性牌，这构筑越打越顺！"
     },
     "gameover-2": {
       "id": "gameover-2",
       "file": "gameover-2.mp3",
-      "text": "哎呀，还是被堵住了！这局拿了九百多分，撑到第二关，消了三行，表现还不错吧！"
-    },
-    "gameover-5": {
-      "id": "gameover-5",
-      "file": "gameover-5.mp3",
-      "text": "哎呀，还是被堵住了！这局拿了九百多分，撑到第二关，消了三行，表现还不错吧！"
-    },
-    "gameover-14": {
-      "id": "gameover-14",
-      "file": "gameover-14.mp3",
-      "text": "哎呀，还是被堵住了！这局拿了八百多分，撑到第二关，消了三行，表现还不错吧！"
-    },
-    "gameover-37": {
-      "id": "gameover-37",
-      "file": "gameover-37.mp3",
-      "text": "哎呀，还是被堵住了！这局拿了九百多分，撑到第二关，消了三行，表现还不错吧！"
-    },
-    "gameover-41": {
-      "id": "gameover-41",
-      "file": "gameover-41.mp3",
-      "text": "哎呀，还是被堵住了！这局拿了九百多分，撑到第二关，消了三行，表现还不错吧！"
-    },
-    "gameover-46": {
-      "id": "gameover-46",
-      "file": "gameover-46.mp3",
-      "text": "哎呀，还是被堵住了！这局拿了一千多分，撑到第二关，消了三行，表现还不错吧！"
-    },
-    "gameover-48": {
-      "id": "gameover-48",
-      "file": "gameover-48.mp3",
-      "text": "哎呀，还是被堵住了！这局拿了九百多分，撑到第二关，消了三行，表现还不错吧！"
-    },
-    "gameover-50": {
-      "id": "gameover-50",
-      "file": "gameover-50.mp3",
-      "text": "哎呀，还是被堵住了！这局拿了九百多分，撑到第二关，消了三行，表现还不错吧！"
-    },
-    "gameover-51": {
-      "id": "gameover-51",
-      "file": "gameover-51.mp3",
-      "text": "哎呀，还是被堵住了！这局拿了九百多分，撑到第二关，消了三行，表现还不错吧！"
-    },
-    "gameover-52": {
-      "id": "gameover-52",
-      "file": "gameover-52.mp3",
-      "text": "哎呀，还是被堵住了！这局拿了一千多分，撑到第二关，消了三行，表现还不错吧！"
+      "text": "被堵住啦！两千三百多分、第三关、消三行，技能带走二十五格、拿到两张属性牌，这构筑越打越顺！"
     },
     "gameover-54": {
       "id": "gameover-54",
       "file": "gameover-54.mp3",
-      "text": "哎呀，还是被堵住了！这局拿了九百多分，撑到第二关，消了三行，表现还不错吧！"
+      "text": "被堵住啦！两千多分、第三关、消四行，技能带走十七格、拿到两张属性牌，这构筑越打越顺！"
     },
-    "gameover-55": {
-      "id": "gameover-55",
-      "file": "gameover-55.mp3",
-      "text": "哎呀，还是被堵住了！这局拿了九百多分，撑到第二关，消了三行，表现还不错吧！"
+    "settle": {
+      "id": "settle",
+      "file": "settle.mp3",
+      "text": "注意看沉降：只有贴近消除线的那一半滑过去压实，另一半原地不动！"
     },
-    "gameover-58": {
-      "id": "gameover-58",
-      "file": "gameover-58.mp3",
-      "text": "哎呀，还是被堵住了！这局拿了九百多分，撑到第二关，消了三行，表现还不错吧！"
+    "skillintro": {
+      "id": "skillintro",
+      "file": "skillintro.mp3",
+      "text": "第二关起方块带技能徽章！金色是炮台，落地开火；青色是共鸣，消掉就引爆！"
     },
-    "gameover-59": {
-      "id": "gameover-59",
-      "file": "gameover-59.mp3",
-      "text": "哎呀，还是被堵住了！这局拿了九百多分，撑到第二关，消了三行，表现还不错吧！"
+    "turret": {
+      "id": "turret",
+      "file": "turret.mp3",
+      "text": "炮台开火！能量弹顺着反重力方向一路把方块打穿！"
     },
-    "gameover-60": {
-      "id": "gameover-60",
-      "file": "gameover-60.mp3",
-      "text": "哎呀，还是被堵住了！这局拿了八百多分，撑到第二关，消了三行，表现还不错吧！"
+    "turretBig": {
+      "id": "turretBig",
+      "file": "turretBig.mp3",
+      "text": "这一发直接带走一整排，太解压了！"
     },
-    "gameover-62": {
-      "id": "gameover-62",
-      "file": "gameover-62.mp3",
-      "text": "哎呀，还是被堵住了！这局拿了九百多分，撑到第二关，消了三行，表现还不错吧！"
+    "resonance": {
+      "id": "resonance",
+      "file": "resonance.mp3",
+      "text": "共鸣引爆！同色方块被一起带走，还连锁着继续炸！"
     },
-    "gameover-64": {
-      "id": "gameover-64",
-      "file": "gameover-64.mp3",
-      "text": "哎呀，还是被堵住了！这局拿了九百多分，撑到第二关，消了三行，表现还不错吧！"
+    "cards": {
+      "id": "cards",
+      "file": "cards.mp3",
+      "text": "攒够一千分弹属性牌三选一，这是本局永久生效的构筑，我走炮台流！"
     },
-    "gameover-68": {
-      "id": "gameover-68",
-      "file": "gameover-68.mp3",
-      "text": "哎呀，还是被堵住了！这局拿了九百多分，撑到第二关，消了三行，表现还不错吧！"
+    "cardTurret": {
+      "id": "cardTurret",
+      "file": "cardTurret.mp3",
+      "text": "拿了炮台系的牌，后面所有技能方块都带上这份加成！"
     },
-    "gameover-71": {
-      "id": "gameover-71",
-      "file": "gameover-71.mp3",
-      "text": "哎呀，还是被堵住了！这局拿了九百多分，撑到第二关，消了三行，表现还不错吧！"
+    "cardReso": {
+      "id": "cardReso",
+      "file": "cardReso.mp3",
+      "text": "这张是共鸣系的牌，同层同列一起炸，场面直接失控！"
     },
-    "gameover-75": {
-      "id": "gameover-75",
-      "file": "gameover-75.mp3",
-      "text": "哎呀，还是被堵住了！这局拿了九百多分，撑到第二关，消了三行，表现还不错吧！"
+    "cardCommon": {
+      "id": "cardCommon",
+      "file": "cardCommon.mp3",
+      "text": "通用牌，技能方块出现得更频繁，后面满屏都是花样！"
     },
-    "gameover-7": {
-      "id": "gameover-7",
-      "file": "gameover-7.mp3",
-      "text": "哎呀，还是被堵住了！这局拿了八百多分，撑到第二关，消了二行，表现还不错吧！"
+    "gameover-144": {
+      "id": "gameover-144",
+      "file": "gameover-144.mp3",
+      "text": "被堵住啦！两千六百多分、第三关、消四行，技能带走二十七格、拿到两张属性牌，这构筑越打越顺！"
     },
-    "gameover-12": {
-      "id": "gameover-12",
-      "file": "gameover-12.mp3",
-      "text": "哎呀，还是被堵住了！这局拿了六百多分，撑到第二关，消了二行，表现还不错吧！"
+    "gameover-111": {
+      "id": "gameover-111",
+      "file": "gameover-111.mp3",
+      "text": "被堵住啦！两千两百多分、第三关、消三行，技能带走二十六格、拿到两张属性牌，这构筑越打越顺！"
     },
-    "gameover-20": {
-      "id": "gameover-20",
-      "file": "gameover-20.mp3",
-      "text": "哎呀，还是被堵住了！这局拿了七百多分，撑到第二关，消了二行，表现还不错吧！"
+    "gameover-108": {
+      "id": "gameover-108",
+      "file": "gameover-108.mp3",
+      "text": "被堵住啦！两千多分、第三关、消三行，技能带走二十一格、拿到两张属性牌，这构筑越打越顺！"
     },
-    "gameover-23": {
-      "id": "gameover-23",
-      "file": "gameover-23.mp3",
-      "text": "哎呀，还是被堵住了！这局拿了七百多分，撑到第二关，消了二行，表现还不错吧！"
+    "gameover-73": {
+      "id": "gameover-73",
+      "file": "gameover-73.mp3",
+      "text": "被堵住啦！两千五百多分、第三关、消四行，技能带走二十四格、拿到两张属性牌，这构筑越打越顺！"
     },
-    "gameover-24": {
-      "id": "gameover-24",
-      "file": "gameover-24.mp3",
-      "text": "哎呀，还是被堵住了！这局拿了七百多分，撑到第二关，消了二行，表现还不错吧！"
-    },
-    "gameover-27": {
-      "id": "gameover-27",
-      "file": "gameover-27.mp3",
-      "text": "哎呀，还是被堵住了！这局拿了八百多分，撑到第二关，消了二行，表现还不错吧！"
-    },
-    "gameover-29": {
-      "id": "gameover-29",
-      "file": "gameover-29.mp3",
-      "text": "哎呀，还是被堵住了！这局拿了六百多分，撑到第二关，消了二行，表现还不错吧！"
-    },
-    "gameover-30": {
-      "id": "gameover-30",
-      "file": "gameover-30.mp3",
-      "text": "哎呀，还是被堵住了！这局拿了七百多分，撑到第二关，消了二行，表现还不错吧！"
-    },
-    "gameover-39": {
-      "id": "gameover-39",
-      "file": "gameover-39.mp3",
-      "text": "哎呀，还是被堵住了！这局拿了七百多分，撑到第二关，消了二行，表现还不错吧！"
-    },
-    "gameover-40": {
-      "id": "gameover-40",
-      "file": "gameover-40.mp3",
-      "text": "哎呀，还是被堵住了！这局拿了七百多分，撑到第二关，消了二行，表现还不错吧！"
-    },
-    "gameover-45": {
-      "id": "gameover-45",
-      "file": "gameover-45.mp3",
-      "text": "哎呀，还是被堵住了！这局拿了八百多分，撑到第二关，消了二行，表现还不错吧！"
-    },
-    "gameover-57": {
-      "id": "gameover-57",
-      "file": "gameover-57.mp3",
-      "text": "哎呀，还是被堵住了！这局拿了七百多分，撑到第二关，消了二行，表现还不错吧！"
-    },
-    "gameover-63": {
-      "id": "gameover-63",
-      "file": "gameover-63.mp3",
-      "text": "哎呀，还是被堵住了！这局拿了七百多分，撑到第二关，消了二行，表现还不错吧！"
-    },
-    "gameover-67": {
-      "id": "gameover-67",
-      "file": "gameover-67.mp3",
-      "text": "哎呀，还是被堵住了！这局拿了六百多分，撑到第二关，消了二行，表现还不错吧！"
-    },
-    "gameover-70": {
-      "id": "gameover-70",
-      "file": "gameover-70.mp3",
-      "text": "哎呀，还是被堵住了！这局拿了七百多分，撑到第二关，消了二行，表现还不错吧！"
-    },
-    "gameover-72": {
-      "id": "gameover-72",
-      "file": "gameover-72.mp3",
-      "text": "哎呀，还是被堵住了！这局拿了八百多分，撑到第二关，消了二行，表现还不错吧！"
-    },
-    "gameover-78": {
-      "id": "gameover-78",
-      "file": "gameover-78.mp3",
-      "text": "哎呀，还是被堵住了！这局拿了七百多分，撑到第二关，消了二行，表现还不错吧！"
+    "gameover-104": {
+      "id": "gameover-104",
+      "file": "gameover-104.mp3",
+      "text": "被堵住啦！两千多分、第三关、消三行，技能带走二十格、拿到两张属性牌，这构筑越打越顺！"
     }
   },
   "voice": "zh-CN-YunxiNeural",

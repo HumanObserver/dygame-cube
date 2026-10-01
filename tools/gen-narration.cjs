@@ -28,53 +28,91 @@ function cn2(n) { // 0..99
   const t = Math.floor(n / 10), o = n % 10;
   return (t > 1 ? DIGITS[t] : '') + '十' + (o ? DIGITS[o] : '');
 }
-function scoreTalk(score) { // 1289 → 一千两百多分
+function scoreTalk(score) { // 1289 → 一千两百多分 ／ 2768 → 两千七百多分
   const h = Math.floor(score / 100) * 100;
+  const say = (n) => (n === 2 ? '两' : DIGITS[n]); // 口语里量词前的 2 读「两」
   if (h >= 1000) {
     const q = Math.floor(h / 1000), rem = Math.floor((h % 1000) / 100);
-    let s = cn2(q) + '千';
-    if (rem) s += cn2(rem) + '百';
+    let s = say(q) + '千';
+    if (rem) s += say(rem) + '百';
     return s + '多分';
   }
-  if (h >= 100) return cn2(Math.floor(h / 100)) + '百多分';
+  if (h >= 100) return say(Math.floor(h / 100)) + '百多分';
   return cn2(h) + '多分';
 }
 
-/* ---------- 配音脚本 ---------- */
+/* ---------- 配音脚本 ----------
+ * 人设：真人玩家视角（画面与配音都不出现「AI/机器人」字样）；短句、口语化，便于烧录字幕。
+ * 触发点（见 web-preview/recorder.js 的事件导演）：
+ *   intro 菜单 → rules 开局 → settle 首次半侧沉降 → levelup 过关清场 → skillintro 技能登场
+ *   → turret/turretBig 炮台开火 → resonance 共鸣引爆 → cards 三选一 → card* 选牌结果
+ *   → danger 转收尾 → gameover-<seed> 结算战绩 → rank 排行榜 → outro 结尾
+ */
 const BASE_CLIPS = [
-  { id: 'intro', text: '这个方块游戏有点怪，方块居然从棋盘正中间往下掉，重力还会随机变方向！第一次玩引力方块，看看我能打到什么程度！' },
-  { id: 'rules', text: '规则很简单：跟着箭头提示走，填满一整行或者一整列就能消除。累计分数过关升级，速度会越来越快！' },
+  { id: 'intro', text: '方块游戏更新版本了！这次炮台、共鸣、属性牌全上线，直接开打！' },
+  { id: 'rules', text: '老规则：方块从正中间出生、重力随机变，填满一行或一列就消除，分数达标就过关！' },
+  { id: 'settle', text: '注意看沉降：只有贴近消除线的那一半滑过去压实，另一半原地不动！' },
+  { id: 'skillintro', text: '第二关起方块带技能徽章！金色是炮台，落地开火；青色是共鸣，消掉就引爆！' },
+  { id: 'turret', text: '炮台开火！能量弹顺着反重力方向一路把方块打穿！' },
+  { id: 'turretBig', text: '这一发直接带走一整排，太解压了！' },
+  { id: 'resonance', text: '共鸣引爆！同色方块被一起带走，还连锁着继续炸！' },
+  { id: 'cards', text: '攒够一千分弹属性牌三选一，这是本局永久生效的构筑，我走炮台流！' },
+  { id: 'cardTurret', text: '拿了炮台系的牌，后面所有技能方块都带上这份加成！' },
+  { id: 'cardReso', text: '这张是共鸣系的牌，同层同列一起炸，场面直接失控！' },
+  { id: 'cardCommon', text: '通用牌，技能方块出现得更频繁，后面满屏都是花样！' },
   { id: 'clear1', text: '漂亮！消掉一行！' },
   { id: 'clear2', text: '双消！这波可以啊！' },
   { id: 'clear3', text: '又消了，根本停不下来！' },
   { id: 'clear4', text: '哇，连锁消除！棋盘直接清空一大片！' },
-  { id: 'levelup', text: '升级啦！下落速度变快了，看好了！' },
+  { id: 'levelup', text: '过关！棋盘整个清空重开，但分数不清零，速度更快、提示更短！' },
   { id: 'danger', text: '哎呀，中间快被堵住了，有点危险！' },
-  { id: 'rank', text: '这个分数直接冲上排行榜！你觉得你能打得过我吗？' },
+  { id: 'rank', text: '这个分数直接冲上排行榜！新版本你也来试试，看能不能打过我？' },
   { id: 'outro', text: '关注我，每天带你解锁一个好玩的抖音小游戏，我们明天见！' },
 ];
 
+function cn2y(n) { // 量词前的口语数字：2 → 两
+  return n === 2 ? '两' : cn2(n);
+}
+
 function gameoverClip(seed, stats) {
-  return {
-    id: 'gameover-' + seed,
-    text: `哎呀，还是被堵住了！这局拿了${scoreTalk(stats.score)}，撑到第${cn2(stats.level)}关，消了${cn2(stats.lines)}行，表现还不错吧！`,
-  };
+  const parts = [`被堵住啦！${scoreTalk(stats.score)}、第${cn2(stats.level)}关、消${cn2(stats.lines)}行`];
+  if (stats.skillKills > 0) parts.push(`，技能带走${cn2y(Math.min(stats.skillKills, 99))}格`);
+  if (stats.cards > 0) parts.push(`、拿到${cn2y(stats.cards)}张属性牌`);
+  parts.push('，这构筑越打越顺！');
+  return { id: 'gameover-' + seed, text: parts.join('') };
 }
 
 /* ---------- TTS ---------- */
 async function synth(voice, rate, clip) {
-  const tts = new MsEdgeTTS();
-  await tts.setMetadata(voice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
+  /* Edge TTS 走 websocket，偶发「Stream closed before the synthesis completed」
+   * → 指数退避重试，录制流水线不该因为一条配音失败就整体重跑 */
   const file = path.join(OUT_DIR, clip.id + '.mp3');
-  try {
-    const { audioFilePath } = await tts.toFile(OUT_DIR, clip.text, { rate });
-    fs.renameSync(audioFilePath, file);
-    const size = fs.statSync(file).size;
-    console.log('OK ' + clip.id + ' (' + size + ' B)');
-    return { id: clip.id, file: clip.id + '.mp3', text: clip.text };
-  } finally {
-    tts.close();
+  let lastErr = null;
+  for (let attempt = 1; attempt <= 4; attempt++) {
+    const tts = new MsEdgeTTS();
+    try {
+      await tts.setMetadata(voice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
+      const { audioFilePath } = await tts.toFile(OUT_DIR, clip.text, { rate });
+      fs.renameSync(audioFilePath, file);
+      const size = fs.statSync(file).size;
+      console.log('OK ' + clip.id + ' (' + size + ' B)' + (attempt > 1 ? ' [retry' + attempt + ']' : ''));
+      return { id: clip.id, file: clip.id + '.mp3', text: clip.text };
+    } catch (e) {
+      lastErr = e;
+      console.log('RETRY ' + clip.id + ' #' + attempt + ': ' + (e && e.message));
+      await new Promise((r) => setTimeout(r, 800 * attempt));
+    } finally {
+      try { tts.close(); } catch (e) { /* noop */ }
+    }
   }
+  throw lastErr;
+}
+
+/** 已存在且文案未变 → 可跳过（--missing） */
+function needSynth(manifest, clip) {
+  const rec = manifest.clips[clip.id];
+  if (!rec || rec.text !== clip.text) return true;
+  return !fs.existsSync(path.join(OUT_DIR, clip.file || (clip.id + '.mp3')));
 }
 
 function loadManifest() {
@@ -94,6 +132,13 @@ function saveManifest(m) {
   const manifest = loadManifest();
   manifest.voice = voice;
   manifest.rate = rate;
+  const SKIP_EXISTING = has('--missing');
+  const emit = async (clip) => {
+    if (SKIP_EXISTING && !needSynth(manifest, clip)) { console.log('SKIP ' + clip.id + ' (已有且文案未变)'); return; }
+    const rec = await synth(voice, rate, clip);
+    manifest.clips[clip.id] = rec;
+    saveManifest(manifest);
+  };
 
   if (!has('--base') && !has('--seed')) {
     console.log('nothing to do (use --base / --seed)');
@@ -101,11 +146,7 @@ function saveManifest(m) {
   }
 
   if (has('--base')) {
-    for (const clip of BASE_CLIPS) {
-      const rec = await synth(voice, rate, clip);
-      manifest.clips[clip.id] = rec;
-      saveManifest(manifest);
-    }
+    for (const clip of BASE_CLIPS) await emit(clip);
   }
 
   const seedArg = val('--seed', null);
@@ -117,11 +158,28 @@ function saveManifest(m) {
     for (const s of seeds) {
       const entry = pool.seeds.find((x) => x.seed === s.seed) || s;
       if (entry.score === undefined) { console.log('SKIP seed ' + s.seed + ' (no stats in seeds.json)'); continue; }
-      const clip = gameoverClip(entry.seed, entry);
-      const rec = await synth(voice, rate, clip);
-      manifest.clips[clip.id] = rec;
-      saveManifest(manifest);
+      const clip = gameoverClip(entry.seed, {
+        score: entry.score, level: entry.level, lines: entry.lines,
+        skillKills: entry.skillKills || 0, cards: entry.cards || (entry.build ? entry.build.length : 0),
+      });
+      await emit(clip);
     }
+  }
+
+  /* --prune：清掉种子池里已经不存在的 gameover-<seed> 配音（换池后避免留下战绩过期的死文件） */
+  if (has('--prune')) {
+    const raw = fs.readFileSync(SEEDS_JSON, 'utf8').replace(/^\uFEFF/, '');
+    const keep = new Set(JSON.parse(raw).seeds.map((x) => 'gameover-' + x.seed));
+    let removed = 0;
+    for (const id of Object.keys(manifest.clips)) {
+      if (!/^gameover-\d+$/.test(id) || keep.has(id)) continue;
+      const file = path.join(OUT_DIR, manifest.clips[id].file || (id + '.mp3'));
+      try { fs.unlinkSync(file); } catch (e) { /* 文件本来就不在 */ }
+      delete manifest.clips[id];
+      removed++;
+    }
+    saveManifest(manifest);
+    console.log('pruned ' + removed + ' stale gameover clips');
   }
   console.log('manifest saved:', MANIFEST);
   process.exit(0);
