@@ -30,16 +30,26 @@ function pickSeed(dateStr) {
 
   const { pool, entry } = pickSeed(dateStr);
   const seed = val('--seed', null) ? parseInt(val('--seed', '0'), 10) : entry.seed;
-  const finish = pool.finishAfterMs || 60000;
+  const finish = pool.finishAfterMs || 100000;
   const name = 'gravity-cube-' + stamp;
 
-  console.log('[daily] seed=' + seed + ' finish=' + finish + ' name=' + name);
+  /* 该种子的结算配音缺失则先补一条（战绩数字取自 seeds.json） */
+  const narrDir = path.join(ROOT, 'web-preview', 'media', 'narration');
+  if (!fs.existsSync(path.join(narrDir, 'gameover-' + seed + '.mp3'))) {
+    console.log('[daily] 生成 seed=' + seed + ' 的结算配音');
+    const g = spawnSync(NODE, [path.join(ROOT, 'tools', 'gen-narration.cjs'), '--seed', String(seed)], { stdio: ['ignore', 'inherit', 'inherit'] });
+    if (g.status !== 0) { console.error('[daily] 配音生成失败 code=' + g.status); process.exit(g.status || 1); }
+  }
+
+  /* 预算：成片时长估算 + 上传与解码余量 */
+  const budget = Math.max(240000, Math.round(((entry.videoS || (finish / 1000 + 27)) + 60) * 1000));
+  console.log('[daily] seed=' + seed + ' finish=' + finish + ' name=' + name + ' budget=' + budget + 'ms');
   const r = spawnSync(NODE, [
     path.join(ROOT, 'web-preview', 'record.cjs'),
     '--seed', String(seed),
     '--finish', String(finish),
     '--name', name,
-    '--timeout', '240000',
+    '--timeout', String(budget),
   ], { stdio: ['ignore', 'pipe', 'inherit'] });
 
   let out = (r.stdout || '').toString();

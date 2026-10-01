@@ -8,6 +8,13 @@ web-preview/bundle.js
 # 本地保存的官方文档参考（不入库、不打包上传）
 /「必接」*.html
 /「必接」*_files/
+/*_抖音开放平台.html
+/*_抖音开放平台_files/
+
+# 抖音发布调试产物（本地截图）与临时抓取的规范正文
+/tools/douyin-*.png
+/log/
+
 web-preview/videos/
 web-preview/frames/
 tools/node_modules/

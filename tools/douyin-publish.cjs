@@ -56,8 +56,12 @@ async function main() {
     const desc = val('--desc', '');
     if (!fs.existsSync(file)) throw new Error('video not found: ' + file);
 
-    await page.goto('https://creator.douyin.com/creator-micro/content/upload', { waitUntil: 'domcontentloaded', timeout: 60000 });
-    await new Promise((r) => setTimeout(r, 5000));
+    if (!page.url().includes('content/upload')) {
+      try {
+        await page.goto('https://creator.douyin.com/creator-micro/content/upload', { waitUntil: 'domcontentloaded', timeout: 45000 });
+      } catch (e) { console.log('[pub] nav warn: ' + e.message + '（继续探测页面）'); }
+    }
+    await new Promise((r) => setTimeout(r, 4000));
 
     // 找文件输入框（上传视频入口）
     const inputs = await page.$$('input[type=file]');
