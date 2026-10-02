@@ -299,29 +299,44 @@ async function main() {
   }
 
   if (cmd === 'publish') {
-    // 找到“发布”按钮（排除“定时发布/存草稿”）
-    const btns = await page.$$('button, div[role=button]');
-    let hit = null;
-    for (const b of btns) {
-      const t = await page.evaluate((e) => ({
-        text: (e.innerText || '').trim(),
-        vis: !!(e.offsetWidth || e.offsetHeight),
-        dis: e.disabled || e.getAttribute('aria-disabled') === 'true',
-      }), b).catch(() => null);
-      if (t && t.vis && t.text === '发布' && !t.dis) { hit = b; break; }
+    const label = val('--label', '发布');
+    // 用页内 click：puppeteer 的 ElementHandle.click 会等元素「稳定」（页面上有封面/进度动画时
+    // 会一直等下去，实测挂 4 分钟以上），React 的 onClick 用 el.click() 就能触发。
+    const clicked = await page.evaluate((L) => {
+      const vis = (e) => !!(e.offsetWidth || e.offsetHeight);
+      const groups = [
+        Array.from(document.querySelectorAll('button, div[role=button]')),
+        Array.from(document.querySelectorAll('span, a, div')),
+      ];
+      for (const list of groups) {
+        for (const e of list) {
+          const t = (e.innerText || '').replace(/\s+/g, '');
+          if (t !== L.replace(/\s+/g, '')) continue;
+          if (!vis(e)) continue;
+          if (e.disabled || e.getAttribute('aria-disabled') === 'true') continue;
+          const r = e.getBoundingClientRect();
+          e.click();
+          return { tag: e.tagName, cls: String(e.className).slice(0, 60), x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) };
+        }
+      }
+      return null;
+    }, label);
+    if (!clicked) throw new Error('button "' + label + '" not found/enabled');
+    console.log('[pub] clicked ' + JSON.stringify(clicked));
+    let after = null;
+    for (let i = 0; i < 10; i++) {
+      await new Promise((r) => setTimeout(r, 3000));
+      after = await page.evaluate(() => ({
+        url: location.href,
+        head: (document.body ? document.body.innerText : '').replace(/\s+/g, ' ').slice(0, 400),
+      })).catch((e) => ({ err: e.message.slice(0, 80) }));
+      console.log('[pub] t+' + ((i + 1) * 3) + 's ' + JSON.stringify(after).slice(0, 200));
+      if (/content-management|content\/manage|发布成功|作品管理/.test((after.url || '') + (after.head || ''))) break;
     }
-    if (!hit) throw new Error('publish button not found/enabled');
-    await hit.click();
-    console.log('[pub] clicked 发布, waiting...');
-    await new Promise((r) => setTimeout(r, 12000));
-    const after = await page.evaluate(() => ({
-      url: location.href,
-      head: document.body ? document.body.innerText.slice(0, 300) : '',
-    }));
     const shot = path.join(ROOT, 'tools', 'douyin-published.png');
-    await page.screenshot({ path: shot });
-    console.log(JSON.stringify(after));
-    console.log(/content-management|发布成功|管理/.test(after.url + after.head) ? 'PUBLISHED?' : 'CHECK_SCREENSHOT');
+    await page.screenshot({ path: shot }).catch(() => {});
+    console.log('shot=' + shot);
+    console.log(/content-management|content\/manage|发布成功|作品管理/.test((after.url || '') + (after.head || '')) ? 'PUBLISHED?' : 'CHECK_SCREENSHOT');
     browser.disconnect();
     return;
   }
