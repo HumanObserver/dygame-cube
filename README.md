@@ -242,6 +242,8 @@ node web-preview/verify.cjs --file videos/gravity-cube-20261001.mp4 --times 43,7
 
 > 两条都是「选种 → 配音 → 固定步长录制 → 交叉校验」一条龙产出，归档在 `web-preview/videos/`（该目录已被 `.gitignore` 忽略，成片不入库）。
 
+**投稿记录**：`gravity-cube-20261001-3.mp4` 已于 2026-10-02 11:44 投稿到抖音创作者中心（账号「人类观察师二号」），标题「这局手气爆棚，炮台共鸣连开，2290分冲到第3关」，简介报的正是画面战绩（2290 分 / 炮台 9 次 / 共鸣 2 次）。投稿链路：专用 `--user-data-dir=%TEMP%\dygame-edge` 的常驻 Edge（CDP 9333，一次性登录后 cookie 留在该 profile）→ `node tools/douyin-publish.cjs upload --file <成片> --title <标题> --desc <简介>` 只填表单 + `[pub] FILLED` 回读校验 → `publish` 用**页内 `el.click()`** 点「发布」（`ElementHandle.click()` 会卡在元素稳定性等待）。作品管理显示 **已发布**。
+
 ### 本轮（v1.3.1）复查用 demo
 
 [web-preview/videos/demo-gravity-cube-v131.mp4](web-preview/videos/demo-gravity-cube-v131.mp4)
