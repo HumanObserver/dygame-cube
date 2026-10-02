@@ -7,7 +7,12 @@ const Input = require('./input.js');
 const rank = require('./rank.js');
 const platform = require('./platform.js');
 const Skills = require('./skills.js');
-const { DIRS, PERP, PLATFORM, SKILL, CARD } = require('./config.js');
+const LevelPlan = require('./levelplan.js');
+const progress = require('./progress.js');
+const { PLATFORM, SKILL, CARD } = require('./config.js');
+
+// DIRS 下标（屏幕绝对方向）：0=下 1=左 2=上 3=右。按键与滑动都用它，不随重力旋转。
+const D_DOWN = 0, D_LEFT = 1, D_UP = 2, D_RIGHT = 3;
 
 const TT = (typeof tt !== 'undefined') ? tt : null;
 
@@ -31,15 +36,19 @@ class Main {
     this.L = Render.buildLayout(this.w, this.h);
     this.core = new GameCore();
 
-    this.state = 'menu'; // menu | playing | cards | paused | gameover | rank | help | sidebar
+    this.state = 'menu'; // menu | playing | levelclear | cards | paused | gameover | rank | help | sidebar | levels
     this.best = rank.getBest();
     this.localRank = rank.getLocal();
+    // 关卡进度存档：新手从第 1 关（教学）开始，之后默认「继续上次玩到的关卡」，选关可强行进入
+    this.checkpoint = progress.load();
+    this.maxLevel = Math.max(progress.maxLevel(), (this.checkpoint && this.checkpoint.level) || 1);
     this.friendCanvas = null;
     this.newBest = false;
     this.fx = [];      // 特效队列 [{kind, cells/shots/waves, t, dur}]
     this.floats = [];  // 漂浮加分字 [{text, x, y, t, dur, color}]
     this.shake = null; // 命中震屏 {t, dur, amp}
     this.toast = null; // 浮字 {text, t, dur}
+    this.tip = null;   // 教学关开场提示卡 {title, text, t, dur}
     this.ptoast = null; // 全局平台提示 {text, t, dur}（所有场景可见）
     this.last = Date.now();
     this._rankReturn = 'menu';
@@ -87,15 +96,42 @@ class Main {
     this.friendCanvas = rank.showFriendRank(A.w * this.dpr, A.h * this.dpr);
   }
 
-  startGame() {
-    this.core.reset();
+  /**
+   * 开一局。
+   * @param opts.level    从第几关开局（关卡选择；第 1~6 关为教学关）
+   * @param opts.resume   传入存档断点则从该断点的关卡开局（分数/构筑沿用）
+   */
+  startGame(opts) {
+    opts = opts || {};
+    if (opts.resume) this.core.restoreLevel(opts.resume);
+    else this.core.startLevel(opts.level || 1);
     this.fx = [];
     this.floats = [];
     this.shake = null;
     this.toast = null;
     this.newBest = false;
     this.reviveUsed = false;
+    this._fromClear = false;   // 过关结算的「刚确认」标记不留到新局
     this.state = 'playing';
+    this.saveProgress();       // 「本关开局」= 断点，下次进来直接续这一关
+    this.showLevelTip();       // 教学关：开局弹一张目标卡
+  }
+
+  /** 存下当前关卡的开局断点（只在开局时存，死亡/回主菜单不会丢进度） */
+  saveProgress() {
+    const rec = progress.save(this.core.snapshot());
+    if (rec) {
+      this.checkpoint = rec;
+      this.maxLevel = Math.max(this.maxLevel || 1, rec.level);
+    }
+  }
+
+  /** 教学关开场目标卡（正式关不弹） */
+  showLevelTip() {
+    const core = this.core;
+    const plan = LevelPlan.planFor(core.level);
+    if (!plan) { this.tip = null; return; }
+    this.tip = { title: '第 ' + core.level + ' 关 · ' + plan.name, text: plan.guide, t: 0, dur: 4200 };
   }
 
   /* ---------- 平台能力（侧边栏/桌面/订阅/广告/内购，详见 js/platform.js） ---------- */
@@ -109,6 +145,11 @@ class Main {
       sidebarClaimable: st.claimable,
       sidebarClaimedToday: st.claimedToday,
       cards: this.core.pendingCards || null, // 属性牌三选一（cards 场景）
+      cardsMeta: this.core.pendingCardsMeta || null, // 教学牌：系别/文案/不可跳过
+      report: this.core.pendingLevelUp || null,     // 过关结算面板数据（levelclear 场景）
+      checkpoint: this.checkpoint,           // 菜单「继续 第 N 关」
+      totalLevels: LevelPlan.TOTAL_LEVELS,
+      maxLevel: this.maxLevel,
     };
   }
 
@@ -240,9 +281,11 @@ class Main {
       }
     }
     if (this.state === 'help' || this.state === 'sidebar') { this.setState('menu'); return; }
+    if (this.state === 'levels') { this.setState('menu'); return; }
     if (this.state === 'playing') {
       const B = this.L.board;
       if (x >= B.x && x <= B.x + B.size && y >= B.y && y <= B.y + B.size) {
+        if (this.tip) { this.tip = null; return; } // 先关掉教学目标卡，别误触旋转
         if (this.core.rotate()) this.vibrate(8);
       }
     }
@@ -253,34 +296,51 @@ class Main {
     const B = this.L.board;
     // 仅响应从棋盘区域起始的滑动
     if (!(sx >= B.x && sx <= B.x + B.size && sy >= B.y && sy <= B.y + B.size)) return;
+    if (this.tip) this.tip = null;
 
-    const dir = this.core.current.dir;
-    const d = DIRS[dir];
-    const p = PERP[dir];
-    const dotG = dx * d.x + dy * d.y;   // 沿重力分量
-    const dotP = dx * p.x + dy * p.y;   // 垂直分量
-
-    if (Math.abs(dotG) >= Math.abs(dotP)) {
-      if (dotG > 30) { this.core.hardDrop(); this.vibrate(15); }
-    } else {
-      // 按格子实际尺寸换算：拖动约一个格宽 = 移动一格（适配任意棋盘尺寸）
-      const steps = Math.min(8, Math.max(1, Math.round(Math.abs(dotP) / B.cell)));
-      const sign = dotP > 0 ? 1 : -1;
-      let moved = false;
-      for (let i = 0; i < steps; i++) { if (this.core.movePerp(sign)) moved = true; else break; }
-      if (moved) this.vibrate(5);
+    // 滑动按**屏幕方向**走（和下面那排固定按键一致）：左右/上 = 移动一格，下 = 速降
+    const adx = Math.abs(dx), ady = Math.abs(dy);
+    if (ady >= adx) {
+      if (dy > 30) { this.core.hardDrop(); this.vibrate(15); return; }
+      if (dy < -30) { if (this.core.moveDir(D_UP)) this.vibrate(5); return; }
+      return;
     }
+    const dir = dx > 0 ? D_RIGHT : D_LEFT;
+    const steps = Math.min(8, Math.max(1, Math.round(adx / B.cell)));
+    let moved = false;
+    for (let i = 0; i < steps; i++) { if (this.core.moveDir(dir)) moved = true; else break; }
+    if (moved) this.vibrate(5);
   }
 
   onButton(id) {
     switch (id) {
       case 'start':
+        this.startGame({ level: 1 }); // 新对局：从第 1 关教学重新开始
+        break;
       case 'retry':
       case 'restart':
-        this.startGame();
+        // 再来一局 / 重新开始：回到「本关开局断点」（进度不丢，见 js/progress.js）
+        if (this.checkpoint) this.startGame({ resume: this.checkpoint });
+        else this.startGame({ level: this.core.level });
         break;
       case 'resume':
-        this.state = 'playing';
+        if (this.state === 'menu') this.startGame({ resume: this.checkpoint || { level: 1 } });
+        else this.state = 'playing';
+        break;
+      case 'nextLevel':
+        // 过关结算 → 进入下一关：此刻才清场、铺本关脚本
+        this._fromClear = true;
+        if (this.core.confirmLevelUp()) this.setState('playing');
+        break;
+      case 'levels':
+        this._rankReturn = 'menu';
+        this.setState('levels');
+        break;
+      /* ---- 关卡选择（第 1~6 关为教学关） ---- */
+      case 'level1': case 'level2': case 'level3': case 'level4':
+      case 'level5': case 'level6': case 'level7': case 'level8':
+      case 'level9': case 'level10': case 'level11': case 'level12':
+        this.startGame({ level: +id.slice(5) });
         break;
       /* ---- 属性牌三选一 ---- */
       case 'card0':
@@ -291,8 +351,7 @@ class Main {
         break;
       }
       case 'cardsSkip':
-        this.core.skipCards();
-        this.state = 'playing';
+        if (this.core.skipCards()) this.state = 'playing';
         break;
       case 'pause':
         if (this.state === 'playing') this.state = 'paused';
@@ -341,16 +400,24 @@ class Main {
       case 'revive':
         this.tryRevive();
         break;
+      /* ---- 固定方向按键：屏幕四向 + 十字正中翻转 + 右侧速降（不随重力旋转） ---- */
+      case 'up':
+        if (this.core.moveDir(D_UP)) this.vibrate(5);
+        break;
+      case 'down':
+        if (this.core.moveDir(D_DOWN)) this.vibrate(5);
+        break;
       case 'left':
-        if (this.core.movePerp(-1)) this.vibrate(5);
+        if (this.core.moveDir(D_LEFT)) this.vibrate(5);
         break;
       case 'right':
-        if (this.core.movePerp(1)) this.vibrate(5);
+        if (this.core.moveDir(D_RIGHT)) this.vibrate(5);
         break;
-      case 'rotate':
+      case 'flip':
+      case 'rotate': // 'rotate' 为兼容旧入口（Web 预览脚本 / 棋盘点击）保留
         if (this.core.rotate()) this.vibrate(8);
         break;
-      case 'drop':
+      case 'drop': // 速降
         if (this.core.canControl()) { this.core.hardDrop(); this.vibrate(15); }
         break;
       default:
@@ -393,21 +460,35 @@ class Main {
         }
         this._floatSkillScore(ev, '共鸣');
         this.vibrate(ev.count ? 30 : 10);
+      } else if (ev.type === 'levelclear') {
+        // 过关结算：对局已挂起（core.pendingLevelUp），棋盘保持消行后的最后一帧
+        this.vibrate(40);
+        if (this.state === 'playing') this.setState('levelclear');
       } else if (ev.type === 'levelup') {
         if (ev.cells && ev.cells.length) this.fx.push({ kind: 'clear', cells: ev.cells, t: 0, dur: 420 });
         const skillTip = ev.skills && ev.level === SKILL.START_LEVEL ? '（技能方块已登场）' : '';
         this.toast = {
-          text: '第 ' + (ev.level - 1) + ' 关合格！清场进入第 ' + ev.level + ' 关' + skillTip,
-          t: 0, dur: 1900,
+          text: this._fromClear
+            ? ('第 ' + ev.level + ' 关开始' + skillTip)
+            : ('第 ' + (ev.level - 1) + ' 关合格！进入第 ' + ev.level + ' 关' + skillTip),
+          t: 0, dur: 1600,
         };
         this.vibrate(30);
+        this.saveProgress();   // 每关开局就是一个断点：下次进来直接从这关继续
+        if (this._fromClear) {
+          this._fromClear = false; // 结算面板刚讲过目标，不再重复弹目标卡
+          this.tip = null;
+        } else {
+          this.showLevelTip();     // 教学关（第 1~6 关）弹「本关目标」卡
+        }
       } else if (ev.type === 'cards') {
-        // 分数跨过属性牌线：弹出三选一（牌池见底则不打断对局）
+        // 属性牌三选一：通用节奏或教学脚本（教学牌带 meta.tutorial）；牌池见底则不打断对局
         if (ev.cards && ev.cards.length && this.state === 'playing') this.setState('cards');
       } else if (ev.type === 'cardpick') {
         const tag = Skills.TAG_LABEL[ev.tag] || '属性';
         this.notify('已获得「' + ev.name + '」（' + tag + '系）');
       } else if (ev.type === 'gameover') {
+        this.tip = null;
         const r = rank.submit(this.core.score, this.core.level, this.core.lines);
         this.best = r.best;
         this.localRank = r.local;
@@ -461,6 +542,10 @@ class Main {
     if (this.toast) {
       this.toast.t += dt;
       if (this.toast.t >= this.toast.dur) this.toast = null;
+    }
+    if (this.tip) {
+      this.tip.t += dt;
+      if (this.tip.t >= this.tip.dur) this.tip = null;
     }
     if (this.ptoast) {
       this.ptoast.t += dt;

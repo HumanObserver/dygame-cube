@@ -199,7 +199,7 @@ test('board：沉降时技能格与方格一起移动，remove() 返回技能快
 /* ================= gamecore ================= */
 
 test('core：7-bag 每 7 个方块不重复', () => {
-  const core = new GameCore({ rng: mulberry32(42) });
+  const core = new GameCore({ tutorial: false, rng: mulberry32(42) });
   core.bag = [];
   const first = [];
   for (let i = 0; i < 7; i++) first.push(core._drawType());
@@ -210,14 +210,14 @@ test('core：7-bag 每 7 个方块不重复', () => {
 });
 
 test('core：重力方向由 rng 决定（0.3→左，0.9→右）', () => {
-  const c1 = new GameCore({ rng: constRng(0.3) });
+  const c1 = new GameCore({ tutorial: false, rng: constRng(0.3) });
   assert.strictEqual(c1.current.dir, 1);
-  const c2 = new GameCore({ rng: constRng(0.9) });
+  const c2 = new GameCore({ tutorial: false, rng: constRng(0.9) });
   assert.strictEqual(c2.current.dir, 3);
 });
 
 test('core：方块从中心生成，hint 相位结束后进入 fall', () => {
-  const core = new GameCore({ rng: constRng(0.3) });
+  const core = new GameCore({ tutorial: false, rng: constRng(0.3) });
   assert.strictEqual(core.phase, 'hint');
   // 出生点应靠近棋盘中心（对任意 COLS 尺寸成立）
   assert.ok(Math.abs(core.current.x + core.current.matrix.length / 2 - COLS / 2) <= 1);
@@ -226,7 +226,7 @@ test('core：方块从中心生成，hint 相位结束后进入 fall', () => {
 });
 
 test('core：重力向下自然落底锁定并重新出块', () => {
-  const core = new GameCore({ rng: constRng(0.1) }); // dir = 0 (下)
+  const core = new GameCore({ tutorial: false, rng: constRng(0.1) }); // dir = 0 (下)
   assert.strictEqual(core.current.dir, 0);
   // 固定一个 O 方块从顶部落下，保证确定性结果
   core.phase = 'fall';
@@ -244,7 +244,7 @@ test('core：重力向下自然落底锁定并重新出块', () => {
 });
 
 test('core：重力向左时落向左侧墙', () => {
-  const core = new GameCore({ rng: constRng(0.3) }); // dir = 1 (左)
+  const core = new GameCore({ tutorial: false, rng: constRng(0.3) }); // dir = 1 (左)
   core.update(core.hintTime() + 1);
   const iv = core.fallInterval();
   for (let i = 0; i < 12; i++) core.update(iv);
@@ -254,7 +254,7 @@ test('core：重力向左时落向左侧墙', () => {
 });
 
 test('core：movePerp 沿垂直轴移动，撞墙返回 false', () => {
-  const core = new GameCore({ rng: constRng(0.1) }); // 重力向下，垂直轴 = x
+  const core = new GameCore({ tutorial: false, rng: constRng(0.1) }); // 重力向下，垂直轴 = x
   core.phase = 'fall';
   core.current = { type: 'O', matrix: SHAPES.O, dir: 0, x: 0, y: 3 };
   assert.strictEqual(core.movePerp(-1), false); // 已在左墙
@@ -265,7 +265,7 @@ test('core：movePerp 沿垂直轴移动，撞墙返回 false', () => {
 });
 
 test('core：旋转带踢墙，O 方块旋转直接成功', () => {
-  const core = new GameCore({ rng: constRng(0.1) });
+  const core = new GameCore({ tutorial: false, rng: constRng(0.1) });
   core.phase = 'fall';
   core.current = { type: 'O', matrix: SHAPES.O, dir: 0, x: 4, y: 4 };
   assert.strictEqual(core.rotate(), true);
@@ -276,7 +276,7 @@ test('core：旋转带踢墙，O 方块旋转直接成功', () => {
 });
 
 test('core：ghostCells 给出重力方向落点', () => {
-  const core = new GameCore({ rng: constRng(0.1) }); // dir down
+  const core = new GameCore({ tutorial: false, rng: constRng(0.1) }); // dir down
   core.phase = 'fall';
   core.current = { type: 'O', matrix: SHAPES.O, dir: 0, x: 0, y: 3 };
   const g = core.ghostCells();
@@ -285,8 +285,9 @@ test('core：ghostCells 给出重力方向落点', () => {
 });
 
 test('core：消行得分（同时消 2 行 = 250×关卡 + 落距×2）', () => {
-  const core = new GameCore({ rng: constRng(0.1) });
+  const core = new GameCore({ tutorial: false, rng: constRng(0.1) });
   core.phase = 'fall';
+  core.levelTarget = () => Infinity; // 只验计分：屏蔽升关清场
   // 预填底部两行，仅留最后两列空
   const cells = [];
   for (let c = 0; c < COLS - 2; c++) { cells.push({ x: c, y: ROWS - 2 }); cells.push({ x: c, y: ROWS - 1 }); }
@@ -304,8 +305,9 @@ test('core：消行得分（同时消 2 行 = 250×关卡 + 落距×2）', () =>
 });
 
 test('core：消行后剩余方块整体下沉，列内无悬空', () => {
-  const core = new GameCore({ rng: constRng(0.1) }); // 重力向下
+  const core = new GameCore({ tutorial: false, rng: constRng(0.1) }); // 重力向下
   core.phase = 'fall';
+  core.levelTarget = () => Infinity; // 只验沉降：屏蔽「消行即达标 → 升关清场」
   const R = ROWS, C = COLS;
   // 第 0 列两个悬空格子 + 底行仅缺最后两列
   core.board.lock([{ x: 0, y: 3 }], 'Z');
@@ -333,8 +335,9 @@ test('core：消行后剩余方块整体下沉，列内无悬空', () => {
 });
 
 test('core：消列后靠近消除线的左半侧右滑贴合，右半侧保持', () => {
-  const core = new GameCore({ rng: constRng(0.1) });
+  const core = new GameCore({ tutorial: false, rng: constRng(0.1) });
   core.phase = 'fall';
+  core.levelTarget = () => Infinity; // 只验半侧沉降：屏蔽升关清场
   const R = ROWS, C = COLS;
   const col = [];
   for (let r = 0; r < R - 4; r++) col.push({ x: C - 1, y: r }); // 第 C-1 列已填 0..R-5 行
@@ -355,8 +358,9 @@ test('core：消列后靠近消除线的左半侧右滑贴合，右半侧保持'
 });
 
 test('core：沉降凑齐新整行 → 连锁消除合并计数（半侧沉降：上半沉到消除线）', () => {
-  const core = new GameCore({ rng: constRng(0.1) }); // 重力向下
+  const core = new GameCore({ tutorial: false, rng: constRng(0.1) }); // 重力向下
   core.phase = 'fall';
+  core.levelTarget = () => Infinity; // 只验连锁沉降：屏蔽升关清场
   const R = ROWS, C = COLS;
   // 第 6 行：除第 9 列外填满；第 10 行整行填满（首消目标）；第 9 列上方一颗悬空 Z
   const mid = [];
@@ -384,7 +388,7 @@ test('core：沉降凑齐新整行 → 连锁消除合并计数（半侧沉降�
 });
 
 test('core：未发生消除时不触发下沉（保留四向重力锁定的悬空位置）', () => {
-  const core = new GameCore({ rng: constRng(0.1) }); // 重力向下
+  const core = new GameCore({ tutorial: false, rng: constRng(0.1) }); // 重力向下
   core.phase = 'fall';
   core.board.lock([{ x: 3, y: 2 }], 'T'); // 悬空块（如上向重力锁定的残留）
   core.current = { type: 'O', matrix: SHAPES.O, dir: 0, x: 10, y: 0 };
@@ -395,47 +399,104 @@ test('core：未发生消除时不触发下沉（保留四向重力锁定的悬�
 
 /* ================= 过关清场 + 积分累加（需求 2） ================= */
 
-test('core：达到合格分 → 棋盘清场、当前块作废、积分累加进入下一关', () => {
-  const core = new GameCore({ rng: constRng(0.1) }); // 重力向下
+test('core：达到合格分 → 先弹「过关结算」挂起，确认后才清场进入下一关', () => {
+  const core = new GameCore({ tutorial: false, rng: constRng(0.1) }); // 重力向下
   core.phase = 'fall';
   const cells = [];
   for (let c = 0; c < COLS - 2; c++) { cells.push({ x: c, y: ROWS - 2 }); cells.push({ x: c, y: ROWS - 1 }); }
   core.board.lock(cells, 'J');
-  core.board.lock([{ x: 5, y: 5 }], 'Z'); // 无关残子：过关时应一并被清掉
+  core.board.lock([{ x: 5, y: 5 }], 'Z'); // 无关残子：确认过关时应一并被清掉
   core.score = LEVEL_TARGETS[0] - 250; // 消 2 行 = 250×1 → 刚好达标
   core.current = { type: 'O', matrix: SHAPES.O, dir: 0, x: COLS - 2, y: ROWS - 3 };
   core.hardDrop();
   assert.strictEqual(core.lines, 2);
-  assert.strictEqual(core.level, 2, '累计分数达标应升关');
-  assert.strictEqual(core.score, LEVEL_TARGETS[0] + 2, '过关后积分不清零（+硬降落距 1 格 ×2）');
-  assert.strictEqual(core.board.allCells().length, 0, '过关应清空整局棋盘');
-  assert.ok(core.current, '过关后应重新出块');
+  assert.strictEqual(core.level, 1, '结算未确认 → 还停在第 1 关');
+  assert.ok(core.pendingLevelUp, '达标应挂起过关结算');
+  assert.strictEqual(core.canControl(), false, '结算期间冻结操作');
+  const before = core.board.allCells().length;
+  core.update(5000); // 结算期间不掉落、不补块、不清场
+  assert.strictEqual(core.current, null, '结算期间不自动出块');
+  assert.strictEqual(core.board.allCells().length, before, '结算期间棋盘保持原样');
+
+  const rep = core.pendingLevelUp;
+  assert.strictEqual(rep.level, 1);
+  assert.strictEqual(rep.next, 2);
+  assert.strictEqual(rep.target, LEVEL_TARGETS[0]);
+  assert.strictEqual(rep.nextTarget, LEVEL_TARGETS[1]);
+  assert.strictEqual(rep.lines, 2);
+  assert.strictEqual(rep.locks, 1, '本关落块数计入结算');
+  assert.strictEqual(rep.gained, LEVEL_TARGETS[0], '本关净增分 = 消行 250（锁定处已贴底，没有落距分）');
   const evs = core.drainEvents();
-  const up = evs.filter((e) => e.type === 'levelup');
+  const cl = evs.filter((e) => e.type === 'levelclear');
+  assert.strictEqual(cl.length, 1, '应推入一次 levelclear 事件');
+  assert.strictEqual(cl[0].report, rep);
+  assert.strictEqual(evs.filter((e) => e.type === 'levelup').length, 0, '确认之前不该有 levelup');
+
+  core.confirmLevelUp();
+  assert.strictEqual(core.level, 2, '确认后进入下一关');
+  assert.strictEqual(core.pendingLevelUp, null);
+  assert.strictEqual(core.board.allCells().length, 0, '过关应清空整局棋盘');
+  assert.strictEqual(core.current, null, '确认后先空手，由 update 补块');
+  assert.strictEqual(core.confirmLevelUp(), null, '重复确认无效');
+  core.update(1600); // hint → fall
+  assert.ok(core.current, 'update 会补上新关卡的第一块');
+  const evs2 = core.drainEvents();
+  const up = evs2.filter((e) => e.type === 'levelup');
   assert.strictEqual(up.length, 1);
   assert.ok(up[0].cells.length >= 1, 'levelup 事件应带上被清场的格子（动画用）');
-  assert.strictEqual(up[0].skills, true, '进入第 2 关后棋盘上会出现技能方块');
+  assert.strictEqual(up[0].skills, false, '第 2 关仍无技能格（SKILL.START_LEVEL = 3，教学关先教会消行）');
   assert.strictEqual(up[0].target, LEVEL_TARGETS[1]);
   assert.strictEqual(core.fallInterval(), FALL_BASE - FALL_STEP, '新关卡下落更快');
 });
 
-test('core：软降途中过关同样清场重开，且不会卡住（update 自动补块）', () => {
-  const core = new GameCore({ rng: constRng(0.1) });
+test('core：结算挂起时回主菜单 → 断点续玩应解冻并能继续操作（不会卡在面板状态）', () => {
+  const core = new GameCore({ tutorial: false, rng: constRng(0.1) });
+  core.phase = 'fall';
+  const row = [];
+  for (let c = 0; c < COLS - 2; c++) row.push({ x: c, y: ROWS - 1 });
+  core.board.lock(row, 'J');
+  core.score = LEVEL_TARGETS[0] - 100; // 消 1 行 = 100 → 达标
+  core.current = { type: 'O', matrix: SHAPES.O, dir: 0, x: COLS - 2, y: ROWS - 3 };
+  core.hardDrop();
+  assert.ok(core.pendingLevelUp, '达标应挂起结算');
+  assert.strictEqual(core.canControl(), false);
+
+  const snap = core.snapshot();            // 回主菜单前存下的断点仍是「本关开局」
+  assert.strictEqual(snap.level, 1, '未确认过关 → 断点仍是第 1 关');
+
+  core.restoreLevel(snap);                 // 菜单「继续 · 第 1 关」
+  assert.strictEqual(core.pendingLevelUp, null, '续玩应解除结算挂起');
+  assert.strictEqual(core.level, 1);
+  assert.strictEqual(core.canControl(), true, '续玩后可以操作');
+  core.update(1600);
+  assert.ok(core.current, '续玩应重新出块');
+});
+
+test('core：软降途中过关同样先挂起结算，确认后清场重开且不卡住', () => {
+  const core = new GameCore({ tutorial: false, rng: constRng(0.1) });
   core.phase = 'fall';
   core.current = { type: 'O', matrix: SHAPES.O, dir: 0, x: 4, y: 0 };
   core.board.lock([{ x: 1, y: 1 }], 'T'); // 场上残留
   core.score = LEVEL_TARGETS[0] - 2;      // 再软降 2 格即达标
   core.update(core.fallInterval() * 2);
-  assert.strictEqual(core.level, 2, '软降分跨过合格线也应过关');
+  assert.strictEqual(core.level, 1, '结算面板先拦一下');
+  assert.ok(core.pendingLevelUp, '软降分跨过合格线也应过关');
+  const yBefore = core.current.y;
+  core.update(6000);
+  assert.strictEqual(core.current.y, yBefore, '挂起期间方块停在半空，不再下落');
+  assert.strictEqual(core.board.grid[1][1], 'T', '残留方块要等确认后才被清场');
+  core.confirmLevelUp();
+  assert.strictEqual(core.level, 2, '确认后升关');
   assert.strictEqual(core.board.allCells().length, 0, '场上残留应被清场');
+  assert.strictEqual(core.current, null, '确认后由 update 重新出块');
+  core.update(1600); // hint → fall
   assert.ok(core.current, 'update 应自动补上一个新方块');
-  assert.strictEqual(core.board.allCells().length, 0);
 });
 
 /* ================= 技能方块（需求 3） ================= */
 
 test('core：第 1 关没有技能方块，第 2 关起按概率出现并快照属性', () => {
-  const core = new GameCore({ rng: constRng(0.1) }); // 0.1 < 出现概率
+  const core = new GameCore({ tutorial: false, rng: constRng(0.1) }); // 0.1 < 出现概率
   core.level = 1;
   assert.strictEqual(core._rollSkill('T'), null, '第 1 关不应出现技能格');
   core.level = SKILL.START_LEVEL;
@@ -447,13 +508,13 @@ test('core：第 1 关没有技能方块，第 2 关起按概率出现并快照�
   assert.deepStrictEqual(sk.mods.scope, ['color', 'row']);
   sk.mods.pierce = 99; // 快照独立，改回来不影响后续
   assert.strictEqual(core.mods.pierce, 2);
-  const never = new GameCore({ rng: constRng(0.99) }); // 概率检定不命中
-  never.level = 2;
+  const never = new GameCore({ tutorial: false, rng: constRng(0.99) }); // 概率检定不命中
+  never.level = SKILL.START_LEVEL;
   assert.strictEqual(never._rollSkill('T'), null);
 });
 
 test('core：炮台落地开火，击落弹道上的方格且其余方格保持原位（不沉降）', () => {
-  const core = new GameCore({ rng: constRng(0.1) });
+  const core = new GameCore({ tutorial: false, rng: constRng(0.1) });
   core.phase = 'fall';
   core.board.lock([{ x: 8, y: 12 }], 'J'); // 弹道上的目标
   core.board.lock([{ x: 8, y: 5 }], 'Z');  // 更远处的同列方格（穿透 0 → 不应被击落）
@@ -590,8 +651,9 @@ test('skills：共鸣级联——被共鸣带走的共鸣格会继续引爆', ()
 });
 
 test('core：共鸣格随整行消除时，同类方格一起消失并计分', () => {
-  const core = new GameCore({ rng: constRng(0.1) });
+  const core = new GameCore({ tutorial: false, rng: constRng(0.1) });
   core.phase = 'fall';
+  core.levelTarget = () => Infinity; // 只验共鸣结算：屏蔽升关清场
   const row = [];
   for (let c = 0; c < COLS - 2; c++) row.push({ x: c, y: ROWS - 1 });
   core.board.lock(row, 'Q');
@@ -638,7 +700,7 @@ test('core：共鸣的消失方式与扩展维度（爆炸 8 格 / 横竖激光 
 });
 
 test('core：共鸣格被炮台击落时也会释放（消除技能＝被消除或被击落）', () => {
-  const core = new GameCore({ rng: constRng(0.1) });
+  const core = new GameCore({ tutorial: false, rng: constRng(0.1) });
   core.phase = 'fall';
   core.board.lock([{ x: 8, y: 10 }], 'Z');
   core.board.setSkill(8, 10, { kind: 'resonance', dir: 0, mods: Skills.defaultMods() }); // 弹道上的共鸣格
@@ -659,7 +721,7 @@ test('core：共鸣格被炮台击落时也会释放（消除技能＝被消除�
 });
 
 test('core：子弹穿过自己方块的其余格，击落更远处的方格（不打到自己人）', () => {
-  const core = new GameCore({ rng: constRng(0.1) });
+  const core = new GameCore({ tutorial: false, rng: constRng(0.1) });
   core.phase = 'fall';
   core.board.lock([{ x: 8, y: 10 }], 'J'); // 弹道更远处的目标
   core.current = {
@@ -676,7 +738,7 @@ test('core：子弹穿过自己方块的其余格，击落更远处的方格（�
 });
 
 test('core：被共鸣带走的炮台格补射一发（被技能消除的格子各自带技能特效）', () => {
-  const core = new GameCore({ rng: constRng(0.1) });
+  const core = new GameCore({ tutorial: false, rng: constRng(0.1) });
   core.phase = 'fall';
   const row = [];
   for (let c = 0; c < 18; c++) row.push({ x: c, y: 19 });
@@ -700,7 +762,7 @@ test('core：被共鸣带走的炮台格补射一发（被技能消除的格子�
 /* ================= 属性牌三选一（需求 4） ================= */
 
 test('core：分数跨过 CARD.INTERVAL → 弹出三张属性牌并暂停对局', () => {
-  const core = new GameCore({ rng: mulberry32(7) });
+  const core = new GameCore({ tutorial: false, rng: mulberry32(7) });
   assert.strictEqual(core.pendingCards, null, '开局不应有待选牌');
   core.score = CARD.INTERVAL - 1;
   core._syncCards();
@@ -717,7 +779,7 @@ test('core：分数跨过 CARD.INTERVAL → 弹出三张属性牌并暂停对局
 });
 
 test('core：选牌立即生效并写进后续技能方块；跳过则不生效', () => {
-  const core = new GameCore({ rng: constRng(0.1) });
+  const core = new GameCore({ tutorial: false, rng: constRng(0.1) });
   core.pendingCards = [{ id: 'bullet_pierce', tag: 'turret', name: '穿甲弹头', desc: '' }];
   core.level = SKILL.START_LEVEL;
   assert.strictEqual(core.pickCard('bullet_pierce').id, 'bullet_pierce');
@@ -729,7 +791,7 @@ test('core：选牌立即生效并写进后续技能方块；跳过则不生效'
   const sk = core._rollSkill('I');
   if (sk) assert.strictEqual(sk.mods.pierce, 1, '后续技能方块带上该属性');
 
-  const c2 = new GameCore({ rng: constRng(0.1) });
+  const c2 = new GameCore({ tutorial: false, rng: constRng(0.1) });
   c2.pendingCards = [{ id: 'bullet_pierce' }];
   assert.strictEqual(c2.skipCards(), true);
   assert.strictEqual(c2.pendingCards, null);
@@ -760,7 +822,7 @@ test('skills：属性牌数值叠加、满级后不再出现；共鸣维度叠�
 });
 
 test('core：技能击落的分数同样推动过关与属性牌节奏', () => {
-  const core = new GameCore({ rng: constRng(0.1) });
+  const core = new GameCore({ tutorial: false, rng: constRng(0.1) });
   core.phase = 'fall';
   core.board.lock([{ x: 8, y: 12 }], 'J');
   core.score = CARD.INTERVAL - SKILL_BASE; // 一发子弹的分数刚好跨过属性牌线
@@ -770,9 +832,13 @@ test('core：技能击落的分数同样推动过关与属性牌节奏', () => {
   };
   core.hardDrop();
   assert.strictEqual(core.score, CARD.INTERVAL);
-  assert.strictEqual(core.level, 2, '技能分数也应推动过关（合格分 500）');
+  assert.ok(core.pendingLevelUp, '技能分数也应推动过关（先弹结算）');
+  // 新曲线：700 分一次跨过 220/420/640 三条合格线 → 确认后落到第 4 关
+  const crossed = LEVEL_TARGETS.filter((t) => t <= CARD.INTERVAL).length;
+  core.confirmLevelUp();
+  assert.strictEqual(core.level, crossed + 1, '跨过 ' + crossed + ' 条合格线');
   assert.strictEqual(core.board.allCells().length, 0, '过关清场');
-  assert.ok(core.pendingCards, '跨过属性牌线应待发牌');
+  assert.ok(core.pendingCards, '跨过属性牌线应待发牌（确认过关后补判）');
   assert.strictEqual(core.pendingCards.length, CARD.CHOICES);
   assert.strictEqual(core.cardTarget, CARD.INTERVAL * 2);
 });
@@ -780,7 +846,7 @@ test('core：技能击落的分数同样推动过关与属性牌节奏', () => {
 /* ================= 集成不变量 ================= */
 
 test('core：长时间自动对局（升关清场 + 技能 + 属性牌）不变量成立', () => {
-  const core = new GameCore({ rng: mulberry32(20250926) });
+  const core = new GameCore({ tutorial: false, rng: mulberry32(20250926) });
   core.level = SKILL.START_LEVEL; // 直接从第 2 关参数开始，覆盖技能与属性牌路径
   core.score = 0;
   core.cardTarget = CARD.INTERVAL;
@@ -791,6 +857,7 @@ test('core：长时间自动对局（升关清场 + 技能 + 属性牌）不变�
   let prevLevel = 1;
   while (guard++ < 4000) {
     if (core.gameOver) { core.revive(); revives++; continue; } // 堵死就重开，继续压后面所有路径
+    if (core.pendingLevelUp) { core.confirmLevelUp(); continue; } // 过关结算 → 确认进下一关
     if (core.pendingCards) {
       core.pickCard(core.pendingCards[Math.floor(core.rng() * core.pendingCards.length) % core.pendingCards.length].id);
       continue;
@@ -806,6 +873,7 @@ test('core：长时间自动对局（升关清场 + 技能 + 属性牌）不变�
         assert.ok(ev.count === undefined || ev.count >= 0);
       }
       if (ev.type === 'levelup') assert.ok(Array.isArray(ev.cells), 'levelup 应带清场快照');
+      if (ev.type === 'levelclear') assert.ok(ev.report && ev.report.next === ev.report.level + 1, '结算应只推进一关');
     }
     // 不变量 1：技能网格与方格网格严格同步
     for (let y = 0; y < ROWS; y++) {
@@ -823,6 +891,7 @@ test('core：长时间自动对局（升关清场 + 技能 + 属性牌）不变�
   }
   assert.ok(revives > 0, '随机走法应至少堵死过一次');
   assert.ok(seen.has('levelup'), '应触发过关清场');
+  assert.ok(seen.has('levelclear'), '达标应先弹过关结算');
   assert.ok(seen.has('cards'), '应触发属性牌三选一');
   assert.ok(seen.has('turret') || seen.has('resonance'), '应至少释放过一次技能');
   assert.ok(core.level >= 3, '累积分数应连过数关, 实际=' + core.level);
@@ -841,8 +910,8 @@ test('config：各关合格分表递增，表外按公式外推', () => {
   assert.ok(levelTarget(L + 2) > levelTarget(L + 1));
 });
 
-test('core：达到第 1 关合格分即升关，下落间隔缩短', () => {
-  const core = new GameCore({ rng: constRng(0.1) });
+test('core：达到第 1 关合格分 → 结算确认后升关，下落间隔缩短', () => {
+  const core = new GameCore({ tutorial: false, rng: constRng(0.1) });
   const iv1 = core.fallInterval();
   assert.strictEqual(iv1, FALL_BASE);
   core.phase = 'fall';
@@ -852,24 +921,30 @@ test('core：达到第 1 关合格分即升关，下落间隔缩短', () => {
   core.score = LEVEL_TARGETS[0] - 100; // 距第 1 关合格分差 100 分
   core.current = { type: 'O', matrix: SHAPES.O, dir: 0, x: COLS - 2, y: ROWS - 2 };
   core.hardDrop(); // 补满底行缺口 → 消 1 行 +100×1 → 达到合格分
-  assert.strictEqual(core.level, 2, '达到合格分应升到第 2 关');
+  assert.ok(core.pendingLevelUp, '达标先弹过关结算');
+  assert.strictEqual(core.level, 1, '没确认之前还在第 1 关');
+  core.confirmLevelUp();
+  assert.strictEqual(core.level, 2, '确认后升到第 2 关');
   assert.strictEqual(core.fallInterval(), FALL_BASE - FALL_STEP);
   assert.strictEqual(core.hintTime(), HINT_BASE - HINT_STEP);
   const evs = core.drainEvents();
   assert.ok(evs.some((e) => e.type === 'levelup' && e.level === 2), '应推入 levelup 事件');
 });
 
-test('core：分数一次跨越多条合格线 → 连升多关', () => {
-  const core = new GameCore({ rng: constRng(0.1) });
+test('core：分数一次跨越多条合格线 → 结算里一次并进，不连弹面板', () => {
+  const core = new GameCore({ tutorial: false, rng: constRng(0.1) });
   core.score = LEVEL_TARGETS[2] - 1; // 距第 3 关合格分差 1 分
   core._syncLevel();
-  assert.strictEqual(core.level, 3);
+  assert.strictEqual(core.level, 1, '只弹一次结算，不当场连升');
+  assert.ok(core.pendingLevelUp);
+  core.confirmLevelUp();
+  assert.strictEqual(core.level, 3, '确认后一次并进两级');
   const ups = core.drainEvents().filter((e) => e.type === 'levelup');
   assert.deepStrictEqual(ups.map((e) => e.level), [2, 3], '应连升两级并各推一个事件');
 });
 
 test('core：消除行数不再直接升关（升关只看合格分）', () => {
-  const core = new GameCore({ rng: constRng(0.1) });
+  const core = new GameCore({ tutorial: false, rng: constRng(0.1) });
   core.lines = 100; // 旧规则（8 行/关）下早已连升，新规则不生效
   core.score = LEVEL_TARGETS[0] - 1;
   core._syncLevel();
@@ -877,23 +952,25 @@ test('core：消除行数不再直接升关（升关只看合格分）', () => {
 });
 
 test('core：自然下落软降分同样计入合格进度', () => {
-  const core = new GameCore({ rng: constRng(0.1) }); // 重力向下
+  const core = new GameCore({ tutorial: false, rng: constRng(0.1) }); // 重力向下
   core.score = LEVEL_TARGETS[0] - 2; // 差 2 分；软降每格 +1
   core.phase = 'fall';
   core.current = { type: 'O', matrix: SHAPES.O, dir: 0, x: 4, y: 0 };
   core.update(core.fallInterval() * 2); // 自然下落 2 格
-  assert.strictEqual(core.level, 2, '软降分达到合格线也应升关');
+  assert.ok(core.pendingLevelUp, '软降分达到合格线也应过关');
+  core.confirmLevelUp();
+  assert.strictEqual(core.level, 2);
 });
 
 test('core：速度有下限', () => {
-  const core = new GameCore({ rng: constRng(0.1) });
+  const core = new GameCore({ tutorial: false, rng: constRng(0.1) });
   core.level = 99;
   assert.strictEqual(core.fallInterval(), FALL_MIN);
   assert.strictEqual(core.hintTime(), HINT_MIN);
 });
 
 test('core：中心出生点被堵 → 游戏结束', () => {
-  const core = new GameCore({ rng: constRng(0.1) });
+  const core = new GameCore({ tutorial: false, rng: constRng(0.1) });
   const cells = [];
   const c0 = Math.floor(ROWS / 2) - 2; // 中心 4×4 区域（覆盖所有方块的出生位置）
   for (let r = c0; r < c0 + 4; r++) for (let c = c0; c < c0 + 4; c++) cells.push({ x: c, y: r });
@@ -906,7 +983,7 @@ test('core：中心出生点被堵 → 游戏结束', () => {
 });
 
 test('core：hardDrop 计分（每格 +2）', () => {
-  const core = new GameCore({ rng: constRng(0.1) }); // dir down
+  const core = new GameCore({ tutorial: false, rng: constRng(0.1) }); // dir down
   core.phase = 'fall';
   core.current = { type: 'O', matrix: SHAPES.O, dir: 0, x: 4, y: 0 };
   core.score = 0;
@@ -917,7 +994,7 @@ test('core：hardDrop 计分（每格 +2）', () => {
 /* ================= 复活（看广告/金币复活，见 platform.js） ================= */
 
 test('core：revive 清空棋盘并保留分数/关卡，可继续游戏', () => {
-  const core = new GameCore({ rng: constRng(0.1) });
+  const core = new GameCore({ tutorial: false, rng: constRng(0.1) });
   // 人为构造游戏结束：堵死中心出生点
   const cells = [];
   const c0 = Math.floor(ROWS / 2) - 2;
@@ -944,7 +1021,7 @@ test('core：revive 清空棋盘并保留分数/关卡，可继续游戏', () =>
 });
 
 test('core：revive 仅在结束态生效，且清空后可再次正常结束', () => {
-  const core = new GameCore({ rng: constRng(0.1) });
+  const core = new GameCore({ tutorial: false, rng: constRng(0.1) });
   assert.strictEqual(core.revive(), false, '未结束时无效');
   // 构造结束 → 复活 → 再堵死中心 → 又能正常结束
   const cells = [];

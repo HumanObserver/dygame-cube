@@ -14,11 +14,13 @@ const FILES = [
   'js/tetromino.js',
   'js/board.js',
   'js/skills.js',
+  'js/levelplan.js',
   'js/gamecore.js',
   'js/render.js',
   'js/input.js',
   'js/platform.js',
   'js/rank.js',
+  'js/progress.js',
   'js/main.js',
   'game.js',
 ];

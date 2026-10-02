@@ -9,10 +9,14 @@
  *   4200 第 2 块下落中    → 截图 3-fall(4200)
  *   4900 布置消行（底行留最后两列 + O 块）
  *   5000 硬降 → 消行      → 截图 4-clear(5150)
- *   5500 布置升级（分数压到合格线 -60 + 次底行留最后两列 + O 块）
- *   5600 硬降 → 合格升 2 关 → 截图 5-levelup(5750)
+ *   5500 布置过关（分数压到合格线 -60 + 门槛补齐 + 次底行留最后两列 + O 块）
+ *   5600 硬降 → 弹出「过关结算」面板 → 截图 5-levelup(5750)
+ *   5900 点「进入第 2 关」→ 清场并铺第 2 关预置缺口
  *   6200 中心 4×4 堵死 → spawn 碰撞 → 游戏结束 → 截图 6-gameover(6500)
  *   6800 打开排行榜       → 截图 7-rank(7100)
+ *   7400 关卡选择页       → 截图 8-levels(7600)
+ *   8200 第 4 关强制天赋牌 → 截图 9-tutcard(8600)
+ *   9100 第 1 关过关结算   → 截图 10-clearpanel(9700)
  */
 (function () {
   var G = window.__game;
@@ -51,18 +55,20 @@
   });
   at(5000, function () { G.core.hardDrop(); });
 
-  /* 升级演示：把分数压到第 1 关合格线附近，再消 1 行触发「合格升关」 */
+  /* 过关结算演示：把分数压到第 1 关合格线附近 + 补齐门槛，再消 1 行触发「过关结算」面板 */
   at(5500, function () {
     var core = G.core, g = core.board.grid, c;
     var R = g.length, C = g[0].length;
-    core.score = Math.max(0, core.levelTarget(core.level) - 60); // 距合格分差 60，消行 +100 即过关
+    core.score = Math.max(0, core.levelTarget(core.level) - 60); // 距合格分差 60，消行 +100 即达标
+    core.locksInLevel = 5; core.levelStats.locks = 5; core.levelStats.clears = 1; // 门槛已练到
     var pre = [];
     for (c = 0; c < C - 2; c++) if (!g[R - 2][c]) pre.push({ x: c, y: R - 2 });
     if (pre.length) core.board.lock(pre, 'J');
     core.current = { type: 'O', matrix: cloneO(), dir: 0, x: C - 2, y: R - 6 };
     core.phase = 'fall'; core.fallTimer = 0;
   });
-  at(5600, function () { G.core.hardDrop(); });
+  at(5600, function () { G.core.hardDrop(); }); // → 截图 5-levelup：过关结算面板（停在消行后那一帧）
+  at(5900, function () { G.onButton('nextLevel'); }); // 确认进入第 2 关（预置缺口 + 强制横条）
 
   /* 游戏结束演示：堵死中心出生区 */
   at(6200, function () {
@@ -77,4 +83,26 @@
 
   /* 排行榜画面 */
   at(6800, function () { G.onButton('rank'); });
+
+  /* v1.4.0 新场景：关卡选择页 → 教学关强制天赋牌 */
+  at(7400, function () { G.onButton('levels'); });
+  at(8200, function () {
+    var core = G.core;
+    core.startLevel(4);            // 第 4 关：炮台天赋教学（预置靶面 + 每块带炮台格）
+    G.state = 'playing';
+    core.score = core.levelStartScore + 80; // 净增 80 分 → 脚本指定强制发牌
+    core._syncCards();
+    if (core.pendingCards) G.setState('cards');
+  });
+
+  /* 教学关过关结算：第 1 关「动作练完 + 分数达标」那一帧（棋盘还是预置局面） */
+  at(9100, function () {
+    var core = G.core;
+    core.startLevel(1);
+    G.state = 'playing';
+    core.locksInLevel = 5; core.levelStats.locks = 5; core.levelStats.clears = 2;
+    core.score = core.levelTarget(1) + 180;
+    core._syncLevel();
+    if (core.pendingLevelUp) G.setState('levelclear');
+  });
 })();

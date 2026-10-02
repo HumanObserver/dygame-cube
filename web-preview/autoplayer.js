@@ -658,6 +658,7 @@
     var finishAfterMs = opts.finishAfterMs === undefined ? 52000 : opts.finishAfterMs;
     var maxLevel = opts.maxLevel === undefined ? 99 : opts.maxLevel;
     var cardHoldMs = opts.cardHoldMs === undefined ? 2200 : opts.cardHoldMs;
+    var clearHoldMs = opts.clearHoldMs === undefined ? 1500 : opts.clearHoldMs;
 
     var bot = {
       mode: 'survive',
@@ -671,8 +672,9 @@
       fallStart: 0,
       dropDelay: 800,
       cardSeenAt: 0,        // 本次属性牌出现的时刻（停留计时）
+      clearSeenAt: 0,       // 本次过关结算面板出现的时刻
       pausedMs: 0,          // 属性牌暂停累计时长（不计入对局时长，切换点才与停留时长无关）
-      stats: { pieces: 0, plannedClears: 0, plannedKills: 0, mismatches: 0, cards: 0, turretPieces: 0, resoPieces: 0 },
+      stats: { pieces: 0, plannedClears: 0, plannedKills: 0, mismatches: 0, cards: 0, clears: 0, turretPieces: 0, resoPieces: 0 },
     };
 
     var dst = makeScratch(core.board); // 前瞻评估复用的草稿棋盘
@@ -735,6 +737,24 @@
         if (hooks.onGameOver) hooks.onGameOver(core);
         return;
       }
+
+      /* 过关结算：core.pendingLevelUp 挂起整局（棋盘停在消行后的最后一帧）。
+       * 面板停留 clearHoldMs 让人看清本关成绩，再确认进入下一关（浏览器走真实按钮）。 */
+      if (core.pendingLevelUp) {
+        if (!bot.clearSeenAt) {
+          bot.clearSeenAt = now;
+          bot.stats.clears++;
+          if (hooks.onLevelClear) hooks.onLevelClear(core.pendingLevelUp);
+        } else if (now - bot.clearSeenAt >= clearHoldMs) {
+          bot.pausedMs += (now - bot.clearSeenAt);
+          bot.clearSeenAt = 0;
+          if (opts.actConfirmLevel) opts.actConfirmLevel(core.pendingLevelUp);
+          else core.confirmLevelUp();
+        }
+        bot.lastPhase = core.phase;
+        return;
+      }
+      bot.clearSeenAt = 0;
 
       /* 属性牌三选一：core.pendingCards 一出现整局即暂停（update / canControl 都被挡住）。
        * 先让牌面停留 cardHoldMs（视频里要看得清、配音要讲得完），再按固定偏好选一张恢复对局。 */
@@ -838,14 +858,34 @@
       finishAfterMs: o.finishAfterMs,
       maxLevel: o.maxLevel,
       cardHoldMs: o.cardHoldMs,
+      clearHoldMs: o.clearHoldMs,
       hooks: o.hooks,
-      actRotate: function () { G.onButton('rotate'); },
-      actMove: function (sign) { G.onButton(sign < 0 ? 'left' : 'right'); },
+      actRotate: function () { G.onButton('flip'); },
+      /* 屏幕按键是「绝对四向」，机器人规划沿垂直于重力的轴移动 → 这里换算成 up/down/left/right */
+      actMove: function (sign) {
+        var cur = core.current;
+        var dir = cur ? cur.dir : 0;
+        var v = PERP[dir];
+        var dx = v.x * sign, dy = v.y * sign;
+        if (dx === 0 && dy === 0) { var d = DIRS[dir]; dx = d.x * sign; dy = d.y * sign; }
+        G.onButton(dx > 0 ? 'right' : (dx < 0 ? 'left' : (dy > 0 ? 'down' : 'up')));
+      },
       actDrop: function () { G.onButton('drop'); },
       /* 属性牌走真实按钮（含选牌音效/命中区域一致性） */
       actChooseCard: function (view, index) { G.onButton('card' + index); },
+      /* 过关结算走真实按钮，命中区域与渲染保持一致 */
+      actConfirmLevel: function () { G.onButton('nextLevel'); },
     });
+    var clearAt = 0;
+    var clearHold = o.clearHoldMs === undefined ? 1500 : o.clearHoldMs;
     var timer = setInterval(function () {
+      /* 过关结算面板（levelclear）：停一会儿让人看清本关成绩，再点「进入下一关」 */
+      if (G.state === 'levelclear') {
+        if (!clearAt) clearAt = Date.now();
+        else if (Date.now() - clearAt >= clearHold) { clearAt = 0; G.onButton('nextLevel'); }
+        return;
+      }
+      clearAt = 0;
       /* 'cards'（属性牌待选）也必须驱动：选牌之前整局是暂停的 */
       if (G.state === 'playing' || G.state === 'cards') bot.tick(Date.now());
       else if (bot.phase !== 'over' && G.state === 'gameover') bot.tick(Date.now());

@@ -7,6 +7,7 @@ const {
 } = require('./config.js');
 const { SHAPES, cellsOf } = require('./tetromino.js');
 const Skills = require('./skills.js');
+const LevelPlan = require('./levelplan.js');
 
 /* ================= 布局 ================= */
 
@@ -18,31 +19,46 @@ function buildLayout(w, h) {
   const nextBox = { x: 12 * s, y: 68 * s, w: 128 * s, h: 64 * s };
   const gravBox = { x: 148 * s, y: 68 * s, w: w - 160 * s, h: 64 * s };
 
-  // 棋盘：正方形，尽量大
-  const reserved = 322 * s; // HUD + 提示行 + 控制区
-  let bs = Math.min(w - 24 * s, h - reserved, h * 0.56);
+  // 棋盘：正方形，尽量大（下方留出「教学条 + 固定操作十字」的高度）
+  const cb = 46 * s;                 // 方向键边长
+  const cgap = 8 * s;                // 十字内间距
+  const dropW = 62 * s;              // 「速降」竖条宽度
+  const crossW = cb * 3 + cgap * 2;  // 十字整体宽高（上/下/左/右/翻转）
+  const guideBand = 64 * s;          // 棋盘下方：教学条 + 构筑条
+  const bottomPad = 16 * s;
+  const controlsTop = h - bottomPad - crossW;
+  const boardBottomMax = controlsTop - guideBand;
+  let bs = Math.min(w - 24 * s, boardBottomMax - 142 * s, h * 0.56);
   bs = Math.max(bs, Math.min(180, w - 24 * s));
   bs *= BOARD_SCALE; // 整体缩放棋盘：方块更小，四周留白更多
   let by = 142 * s;
-  const slack = h - 96 * s - bs - by;
-  if (slack > 0) by += slack * 0.3;
+  const slack = boardBottomMax - bs - by;
+  if (slack > 0) by += slack * 0.4;
   const board = { x: (w - bs) / 2, y: by, size: bs, cell: bs / COLS };
 
-  // 底部控制按钮
-  const btnSize = Math.min(64 * s, (w - 40 * s) / 4.6);
-  const cy = h - 92 * s;
-  const xs = [w * 0.14, w * 0.38, w * 0.62, w * 0.86];
+  // 底部操作区：五个按键位置**固定**，不随重力方向旋转
+  //   上 / 左 / 翻转 / 右 / 下 排成十字（翻转在正中），「速降」竖条放十字右侧
+  const groupW = crossW + cgap + dropW;
+  const gx = (w - groupW) / 2;
+  const crossCX = gx + crossW / 2;
+  const crossCY = controlsTop + crossW / 2;
+  const step = cb + cgap;
+  const cellRect = (ccx, ccy) => ({ x: ccx - cb / 2, y: ccy - cb / 2, w: cb, h: cb });
   const controls = {
-    left: { x: xs[0] - btnSize / 2, y: cy, w: btnSize, h: btnSize },
-    rotate: { x: xs[1] - btnSize / 2, y: cy, w: btnSize, h: btnSize },
-    drop: { x: xs[2] - btnSize / 2, y: cy, w: btnSize, h: btnSize },
-    right: { x: xs[3] - btnSize / 2, y: cy, w: btnSize, h: btnSize },
+    up: cellRect(crossCX, crossCY - step),
+    left: cellRect(crossCX - step, crossCY),
+    flip: cellRect(crossCX, crossCY),
+    right: cellRect(crossCX + step, crossCY),
+    down: cellRect(crossCX, crossCY + step),
+    drop: { x: gx + crossW + cgap, y: controlsTop, w: dropW, h: crossW },
   };
+  const guide = { x: board.x, y: board.y + bs + 18 * s, w: bs, h: 20 * s };
+  const build = { x: board.x, y: board.y + bs + 40 * s, w: bs, h: 14 * s };
 
   // 排行榜页好友区域
   const rankArea = { x: 16 * s, y: 104 * s, w: w - 32 * s, h: Math.min(280 * s, h * 0.38) };
 
-  return { w, h, s, hud, pauseBtn, nextBox, gravBox, board, controls, rankArea };
+  return { w, h, s, hud, pauseBtn, nextBox, gravBox, board, controls, guide, build, controlsTop, rankArea };
 }
 
 /* ================= 按钮定义（绘制 + 命中检测共用） ================= */
@@ -62,14 +78,27 @@ function sceneButtons(scene, L, opts) {
   const s = L.s, w = L.w, h = L.h;
   const out = [];
   if (scene === 'menu') {
-    const bw = 220 * s, bh = 56 * s, bx = (w - bw) / 2;
-    let y = h * 0.50;
-    out.push(mk('start', { x: bx, y: y, w: bw, h: bh }, { text: '开始游戏', primary: true }));
-    y += bh + 12 * s;
-    out.push(mk('rank', { x: bx, y: y, w: bw, h: 48 * s }, { text: '排行榜' }));
-    y += 48 * s + 12 * s;
-    out.push(mk('help', { x: bx, y: y, w: bw, h: 48 * s }, { text: '玩法说明' }));
-    y += 48 * s + 12 * s;
+    const bw = 220 * s, bx = (w - bw) / 2;
+    let y = h * 0.44;
+    const hasSave = !!(opts.checkpoint && opts.checkpoint.level > 1);
+    const half = (bw - 8 * s) / 2, rowH = 46 * s;
+    if (hasSave) {
+      out.push(mk('resume', { x: bx, y: y, w: bw, h: 56 * s }, { text: '继续 · 第 ' + opts.checkpoint.level + ' 关', primary: true }));
+    } else {
+      out.push(mk('start', { x: bx, y: y, w: bw, h: 56 * s }, { text: '开始游戏', primary: true }));
+    }
+    y += 56 * s + 10 * s;
+    // 第 1~6 关是教学关：没有存档时主按钮就是「开始游戏」，有存档则给「重玩第 1 关」
+    if (hasSave) {
+      out.push(mk('start', { x: bx, y: y, w: half, h: rowH }, { text: '重玩第 1 关', small2: true }));
+      out.push(mk('levels', { x: bx + half + 8 * s, y: y, w: half, h: rowH }, { text: '关卡选择', small2: true }));
+    } else {
+      out.push(mk('levels', { x: bx, y: y, w: bw, h: rowH }, { text: '关卡选择' }));
+    }
+    y += rowH + 10 * s;
+    out.push(mk('rank', { x: bx, y: y, w: half, h: rowH }, { text: '排行榜', small2: true }));
+    out.push(mk('help', { x: bx + half + 8 * s, y: y, w: half, h: rowH }, { text: '玩法说明', small2: true }));
+    y += rowH + 10 * s;
     // 侧边栏复访奖励入口（必接能力；宿主明确不支持时隐藏）
     if (opts.sidebarSupported !== false) {
       out.push(mk('sidebarGift', { x: bx, y: y, w: bw, h: 44 * s }, {
@@ -86,11 +115,14 @@ function sceneButtons(scene, L, opts) {
     out.push(mk('subscribe', { x: bx + sw + gap, y: y, w: sw, h: sh }, { text: '订阅提醒', small2: true }));
     out.push(mk('freeCoins', { x: bx + (sw + gap) * 2, y: y, w: sw, h: sh }, { text: '免费金币', small2: true }));
   } else if (scene === 'playing' || scene === 'paused') {
+    // 五个按键**固定不动**：上/下/左/右按屏幕方向移动，翻转在十字正中（旋转）
     const c = L.controls;
-    out.push(mk('left', c.left, { glyph: 'perp', sign: -1 }));
-    out.push(mk('rotate', c.rotate, { text: '旋转', small: true }));
-    out.push(mk('drop', c.drop, { glyph: 'drop' }));
-    out.push(mk('right', c.right, { glyph: 'perp', sign: 1 }));
+    out.push(mk('up', c.up, { glyph: 'arrow', dx: 0, dy: -1 }));
+    out.push(mk('left', c.left, { glyph: 'arrow', dx: -1, dy: 0 }));
+    out.push(mk('flip', c.flip, { text: '翻转', tiny: true }));
+    out.push(mk('right', c.right, { glyph: 'arrow', dx: 1, dy: 0 }));
+    out.push(mk('down', c.down, { glyph: 'arrow', dx: 0, dy: 1 }));
+    out.push(mk('drop', c.drop, { text: '速降', stack: true }));
     out.push(mk('pause', L.pauseBtn, { glyph: 'pause' }));
     if (scene === 'paused') {
       const bw = 200 * s, bh = 50 * s, bx = (w - bw) / 2, py = h * 0.42;
@@ -98,6 +130,30 @@ function sceneButtons(scene, L, opts) {
       out.push(mk('restart', { x: bx, y: py + (bh + 14 * s), w: bw, h: bh }, { text: '重新开始' }));
       out.push(mk('tomenu', { x: bx, y: py + (bh + 14 * s) * 2, w: bw, h: bh }, { text: '返回主页' }));
     }
+  } else if (scene === 'levels') {
+    // 关卡选择：1~6 为教学关，之后是正式关
+    const total = LevelPlan.TOTAL_LEVELS;
+    const cols = 4, gap = 8 * s;
+    const gw = Math.min(w - 40 * s, 320 * s);
+    const cw = (gw - gap * (cols - 1)) / cols, ch = 54 * s;
+    const x0 = (w - gw) / 2, y0 = h * 0.27;
+    for (let i = 0; i < total; i++) {
+      const row = Math.floor(i / cols), col = i % cols;
+      out.push(mk('level' + (i + 1), {
+        x: x0 + col * (cw + gap), y: y0 + row * (ch + gap), w: cw, h: ch,
+      }, { level: i + 1, tutorial: LevelPlan.isTutorial(i + 1) }));
+    }
+    const rows = Math.ceil(total / cols);
+    const bw = 160 * s;
+    out.push(mk('back', { x: (w - bw) / 2, y: y0 + rows * (ch + gap) + 16 * s, w: bw, h: 46 * s }, { text: '返回' }));
+  } else if (scene === 'levelclear') {
+    // 过关结算：确认后才清场进入下一关（底部十字此时不画，按钮放到顺手的高度）
+    const rep = opts.report || {};
+    const bw = 244 * s, bh = 54 * s, bx = (w - bw) / 2;
+    out.push(mk('nextLevel', { x: bx, y: h * 0.775, w: bw, h: bh },
+      { text: '进入第 ' + (rep.next || 2) + ' 关', primary: true }));
+    out.push(mk('tomenu', { x: bx, y: h * 0.775 + bh + 12 * s, w: bw, h: 42 * s },
+      { text: '返回主页（本关进度已存）', small: true }));
   } else if (scene === 'gameover') {
     const bw = 220 * s, bh = 50 * s, bx = (w - bw) / 2;
     let y = opts.canRevive ? h * 0.42 : h * 0.47;
@@ -118,19 +174,25 @@ function sceneButtons(scene, L, opts) {
   } else if (scene === 'cards') {
     // 属性牌三选一（纵向牌面列表，文字更好读）
     const cards = opts.cards || [];
+    const meta = opts.cardsMeta || null;
     const cw = Math.min(w - 40 * s, 320 * s), ch = 96 * s, gap = 12 * s;
     const cx = (w - cw) / 2;
-    const cy0 = h * 0.235;
+    const cy0 = meta && meta.tutorial ? h * 0.27 : h * 0.235;
     const n = Math.min(CARD.CHOICES, cards.length);
     for (let i = 0; i < n; i++) {
       out.push(mk('card' + i, { x: cx, y: cy0 + i * (ch + gap), w: cw, h: ch }, { cardIndex: i }));
     }
     const sw = 150 * s;
-    out.push(mk('cardsSkip', { x: (w - sw) / 2, y: cy0 + n * (ch + gap) + 4 * s, w: sw, h: 40 * s },
-      { text: '跳过（不加持）', small2: true }));
-  } else if (scene === 'rank' || scene === 'help') {
-    const bw = 160 * s, bh = 46 * s;
-    out.push(mk('back', { x: (w - bw) / 2, y: h - 78 * s, w: bw, h: bh }, { text: '返回' }));
+    // 教学关的「天赋牌」必须选一张：不给跳过入口（core.skipCards 同样拒绝）
+    if (!(meta && meta.force)) {
+      out.push(mk('cardsSkip', { x: (w - sw) / 2, y: cy0 + n * (ch + gap) + 4 * s, w: sw, h: 40 * s },
+        { text: '跳过（不加持）', small2: true }));
+    }
+  } else if (scene === 'rank' || scene === 'help' || scene === 'levels') {
+    if (scene !== 'levels') {
+      const bw = 160 * s, bh = 46 * s;
+      out.push(mk('back', { x: (w - bw) / 2, y: h - 78 * s, w: bw, h: bh }, { text: '返回' }));
+    }
   } else if (scene === 'sidebar') {
     // 侧边栏复访任务面板：去侧边栏 / 领取奖励
     const bw = 220 * s, bh = 50 * s, bx = (w - bw) / 2;
@@ -312,7 +374,7 @@ function drawSkillIcon(ctx, kind, cx, cy, r, t) {
   ctx.restore();
 }
 
-function drawButton(ctx, b, L, dir, enabled) {
+function drawButton(ctx, b, L, enabled) {
   const s = L.s;
   ctx.save();
   if (enabled === false) ctx.globalAlpha = 0.45;
@@ -335,23 +397,26 @@ function drawButton(ctx, b, L, dir, enabled) {
   const cx = b.x + b.w / 2;
   const cy = b.y + b.h / 2;
 
-  if (b.glyph === 'perp' && dir !== undefined) {
-    const p = PERP[dir];
-    drawTriangle(ctx, cx, cy, p.x * b.sign, p.y * b.sign, Math.min(b.w, b.h) * 0.42, '#ffffff');
-  } else if (b.glyph === 'drop' && dir !== undefined) {
-    const d = DIRS[dir];
-    drawTriangle(ctx, cx, cy - 4 * s, d.x, d.y, Math.min(b.w, b.h) * 0.44, ACCENT);
-    text(ctx, '落下', cx, cy + b.h * 0.34, 10 * s, 'rgba(255,255,255,0.75)', 'center', false);
+  if (b.glyph === 'arrow') {
+    // 方向键：箭头指向**屏幕方向**，永远不随重力旋转
+    drawTriangle(ctx, cx, cy, b.dx || 0, b.dy || 0, Math.min(b.w, b.h) * 0.44, '#ffffff');
   } else if (b.glyph === 'pause') {
     const bw2 = 4 * s, bh2 = 14 * s, gap = 3 * s;
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(cx - gap - bw2, cy - bh2 / 2, bw2, bh2);
     ctx.fillRect(cx + gap, cy - bh2 / 2, bw2, bh2);
+  } else if (b.stack && b.text) {
+    // 「速降」竖排：占住十字右侧的竖条，好按且不会跟方向键混
+    const fs = 17 * s, lh = fs * 1.12, n = b.text.length;
+    for (let i = 0; i < n; i++) {
+      const yy = cy - (n - 1) * lh / 2 + i * lh + fs * 0.34;
+      text(ctx, b.text.charAt(i), cx, yy, fs, ACCENT, 'center', true);
+    }
   } else if (b.text) {
-    const fs = b.small2 ? 11 : (b.small ? 15 : 17);
-    const dy = b.small2 ? 4 * s : (b.small ? 5 * s : 7 * s);
-    text(ctx, b.text, cx, cy + dy, fs * s,
-      b.primary ? '#ffffff' : 'rgba(255,255,255,0.92)', 'center', true);
+    const fs = b.tiny ? 12 : (b.small2 ? 11 : (b.small ? 15 : 17));
+    const dy = b.tiny ? 4 * s : (b.small2 ? 4 * s : (b.small ? 5 * s : 7 * s));
+    const col = b.tiny ? '#ffd54f' : (b.primary ? '#ffffff' : 'rgba(255,255,255,0.92)');
+    text(ctx, b.text, cx, cy + dy, fs * s, col, 'center', true);
   }
   ctx.restore();
 }
@@ -381,15 +446,19 @@ function drawMenu(ctx, L, main, t) {
     drawMiniShape(ctx, d.type, d.x, yy, d.cell, 0.5);
   }
 
-  text(ctx, '引力方块', w / 2, h * 0.30, 42 * s, '#ffffff', 'center', true);
-  text(ctx, '四向重力 · 方块消除 · 技能构筑', w / 2, h * 0.30 + 30 * s, 14 * s, 'rgba(255,255,255,0.65)', 'center', false);
-  text(ctx, '最高分 ' + main.best + ' · 金币 ' + (main.coins || 0), w / 2, h * 0.50 - 22 * s,
-    15 * s, 'rgba(255,215,0,0.9)', 'center', true);
+  text(ctx, '引力方块', w / 2, h * 0.28, 42 * s, '#ffffff', 'center', true);
+  text(ctx, '四向重力 · 方块消除 · 技能构筑', w / 2, h * 0.28 + 30 * s, 14 * s, 'rgba(255,255,255,0.65)', 'center', false);
+  text(ctx, '前 6 关手把手教学 · 第 7 关起四向随机重力', w / 2, h * 0.28 + 52 * s, 12 * s,
+    'rgba(170,205,255,0.8)', 'center', false);
+  const cp = main.checkpoint;
+  text(ctx, '最高分 ' + main.best + ' · 金币 ' + (main.coins || 0)
+    + (cp && cp.level > 1 ? (' · 进度 第 ' + cp.level + ' 关') : ''),
+    w / 2, h * 0.44 - 24 * s, 15 * s, 'rgba(255,215,0,0.9)', 'center', true);
 
   const btns = sceneButtons('menu', L, main.sceneOpts ? main.sceneOpts() : {});
-  for (let i = 0; i < btns.length; i++) drawButton(ctx, btns[i], L, undefined, true);
+  for (let i = 0; i < btns.length; i++) drawButton(ctx, btns[i], L, true);
 
-  text(ctx, 'v1.3.0 · 抖音小游戏', w / 2, h - 20 * s, 11 * s, 'rgba(255,255,255,0.35)', 'center', false);
+  text(ctx, 'v1.5.2 · 抖音小游戏', w / 2, h - 20 * s, 11 * s, 'rgba(255,255,255,0.35)', 'center', false);
 }
 
 function drawHud(ctx, L, main) {
@@ -410,8 +479,9 @@ function drawHud(ctx, L, main) {
     text(ctx, c.label, cx, hud.y + 16 * s, 11 * s, 'rgba(255,255,255,0.55)', 'center', false);
     text(ctx, c.value, cx, hud.y + 42 * s, fs * s, c.color || '#ffffff', 'center', true);
   }
-  // 本关进度条：上一关合格分 → 当前关合格分
-  const prev = core.level > 1 ? core.levelTarget(core.level - 1) : 0;
+  // 本关进度条：本关入场分 → 本关合格分（量的是「这一关净拿了多少分」；
+  // 用上一关合格分当起点会在上一关爆分时变成负数区间，进度条一直满格）
+  const prev = core.level > 1 ? core.levelStartScore : 0;
   const k = Math.max(0, Math.min(1, (core.score - prev) / Math.max(1, target - prev)));
   const bw = hud.w, bh = Math.max(3, 4 * s), bx = hud.x, by = hud.y + 50 * s;
   roundRect(ctx, bx, by, bw, bh, bh / 2);
@@ -873,14 +943,50 @@ function drawFloats(ctx, L, main) {
   }
 }
 
+/** 棋盘下方的教学条（第 1~6 关常驻）：本关叫什么 + 还差什么；教学完成后提示拿分过关 */
+function drawGuide(ctx, L, main) {
+  const core = main.core;
+  if (!core.tutorialOn) return;
+  const plan = LevelPlan.planFor(core.level);
+  if (!plan) return;
+  const G = L.guide, s = L.s;
+  const gs = LevelPlan.gateStatus(core.level, core.levelStats);
+  const left = '第 ' + core.level + ' 关 · ' + plan.name;
+  const right = gs.done
+    ? '教学完成 · 拿满 ' + core.levelTarget() + ' 分过关'
+    : '还差 ' + gs.left + '：' + gs.what;
+  const done = gs.done;
+  ctx.save();
+  roundRect(ctx, G.x, G.y, G.w, G.h, G.h / 2);
+  ctx.fillStyle = done ? 'rgba(120,220,160,0.10)' : 'rgba(255,213,79,0.12)';
+  ctx.fill();
+  ctx.strokeStyle = done ? 'rgba(120,220,160,0.42)' : 'rgba(255,213,79,0.5)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  let fs = 11 * s;
+  ctx.font = 'bold ' + fs + 'px sans-serif';
+  while ((ctx.measureText(left).width + ctx.measureText(right).width) > G.w - 18 * s && fs > 8 * s) {
+    fs -= 0.5 * s;
+    ctx.font = 'bold ' + fs + 'px sans-serif';
+  }
+  const ty = G.y + G.h * 0.68;
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = 'rgba(255,255,255,0.72)';
+  ctx.fillText(left, G.x + 9 * s, ty);
+  ctx.textAlign = 'right';
+  ctx.fillStyle = done ? 'rgba(150,230,180,0.95)' : '#ffd54f';
+  ctx.fillText(right, G.x + G.w - 9 * s, ty);
+  ctx.restore();
+}
+
 /** 棋盘下方的技能构筑条：本局已选属性牌的生效值 */
 function drawBuildBar(ctx, L, main) {
   const core = main.core;
   if (core.level < SKILL.START_LEVEL && !core.cardPicks.length) return;
   const B = L.board;
   const s = L.s;
-  const y = B.y + B.size + 14 * s;
-  if (y > L.h - 100 * s) return; // 空间不足则不画
+  const y = (L.build ? L.build.y : B.y + B.size + 14 * s) + 10 * s;
+  if (y > L.controlsTop - 6 * s) return; // 空间不足则不画
   const chips = Skills.buildSummary(core.mods);
   const cards = core.cardPicks.length;
   ctx.save();
@@ -902,13 +1008,12 @@ function drawBuildBar(ctx, L, main) {
 }
 
 function drawControls(ctx, L, main) {
-  const dir = main.core.current ? main.core.current.dir : 0;
+  if (main.state === 'levelclear') return; // 结算面板自带按钮，底部十字先让位（避免按钮叠按钮）
   const enabled = main.core.canControl();
   const btns = sceneButtons('playing', L);
   for (let i = 0; i < btns.length; i++) {
     const b = btns[i];
-    if (b.id === 'pause') { drawButton(ctx, b, L, dir, true); continue; }
-    drawButton(ctx, b, L, dir, enabled);
+    drawButton(ctx, b, L, b.id === 'pause' ? true : enabled);
   }
 }
 
@@ -938,17 +1043,21 @@ const TAG_ACCENT = {
 };
 const TAG_LABEL = { turret: '炮台', resonance: '共鸣', common: '通用' };
 
-/** 属性牌三选一面板（分数跨过 CARD.INTERVAL 时弹出，游戏暂停） */
+/** 属性牌三选一面板（通用节奏：分数跨过 CARD.INTERVAL；教学关：脚本指定时机只发某系牌） */
 function drawCards(ctx, L, main) {
   const s = L.s, w = L.w, h = L.h;
   drawOverlay(ctx, L, 0.72);
   const opts = main.sceneOpts ? main.sceneOpts() : {};
   const cards = opts.cards || [];
+  const meta = opts.cardsMeta || null;
+  const tut = !!(meta && meta.tutorial);
 
-  text(ctx, '属性牌 · 三选一', w / 2, h * 0.155, 24 * s, '#ffffff', 'center', true);
-  text(ctx, '选一张，本局后续遇到的技能方块都会带上它', w / 2, h * 0.155 + 24 * s, 12 * s,
-    'rgba(255,255,255,0.62)', 'center', false);
-  text(ctx, '（当前 ' + main.core.score + ' 分 · 每 ' + CARD.INTERVAL + ' 分一次）', w / 2, h * 0.155 + 42 * s,
+  text(ctx, tut ? '天赋牌 · 三选一' : '属性牌 · 三选一', w / 2, h * 0.155, 24 * s, '#ffffff', 'center', true);
+  text(ctx, tut ? (meta.note || '选一张，本局后续的技能方块都会带上它')
+    : '选一张，本局后续遇到的技能方块都会带上它', w / 2, h * 0.155 + 24 * s, 12 * s,
+    tut ? (TAG_ACCENT[meta.tag] || '#ffd54f') : 'rgba(255,255,255,0.62)', 'center', false);
+  text(ctx, tut ? ('第 ' + meta.level + ' 关教学 · ' + (meta.force ? '选一张才能继续' : '可以不选'))
+    : '（当前 ' + main.core.score + ' 分 · 每 ' + CARD.INTERVAL + ' 分一次）', w / 2, h * 0.155 + 42 * s,
     11 * s, 'rgba(255,215,79,0.85)', 'center', false);
 
   const btns = sceneButtons('cards', L, opts);
@@ -1012,7 +1121,36 @@ function drawCards(ctx, L, main) {
   }
 
   const skip = btns[cards.length];
-  if (skip) drawButton(ctx, skip, L, undefined, true);
+  if (skip) drawButton(ctx, skip, L, true);
+}
+
+/** 教学关开场目标卡：棋盘正中一张卡片，几秒后自动消失（点棋盘可提前关闭） */
+function drawTip(ctx, L, main) {
+  const tip = main.tip;
+  if (!tip) return;
+  const B = L.board, s = L.s;
+  const k = Math.max(0, Math.min(1, tip.t / (tip.dur || 4000)));
+  const alpha = k < 0.12 ? k / 0.12 : (k > 0.78 ? Math.max(0, (1 - k) / 0.22) : 1);
+  const pw = Math.min(B.size - 12 * s, 306 * s);
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.font = 'bold ' + (12.5 * s) + 'px sans-serif';
+  const lines = wrapText(ctx, tip.text, pw - 26 * s, 3);
+  const rowH = 19 * s;
+  const ph = 58 * s + lines.length * rowH;
+  const px = B.x + (B.size - pw) / 2, py = B.y + B.size * 0.26;
+  roundRect(ctx, px, py, pw, ph, 14 * s);
+  ctx.fillStyle = 'rgba(16,20,40,0.95)';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,213,79,0.6)';
+  ctx.lineWidth = 1.4;
+  ctx.stroke();
+  text(ctx, tip.title, px + pw / 2, py + 27 * s, 16 * s, '#ffd54f', 'center', true);
+  for (let i = 0; i < lines.length; i++) {
+    text(ctx, lines[i], px + pw / 2, py + 27 * s + (21 + i * 19) * s, 12.5 * s, 'rgba(255,255,255,0.9)', 'center', false);
+  }
+  text(ctx, '点棋盘可关闭', px + pw / 2, py + ph - 11 * s, 10 * s, 'rgba(255,255,255,0.38)', 'center', false);
+  ctx.restore();
 }
 
 function drawGameScene(ctx, L, main, t) {
@@ -1020,6 +1158,8 @@ function drawGameScene(ctx, L, main, t) {
   drawNextBox(ctx, L, main, t);
   drawGravBox(ctx, L, main, t);
   drawBoard(ctx, L, main, t);
+  drawTip(ctx, L, main);
+  drawGuide(ctx, L, main);
   drawBuildBar(ctx, L, main);
   drawFloats(ctx, L, main);
   drawControls(ctx, L, main);
@@ -1036,11 +1176,75 @@ function drawPaused(ctx, L, main) {
   const s = L.s;
   text(ctx, '已暂停', L.w / 2, L.h * 0.32, 30 * s, '#ffffff', 'center', true);
   const btns = sceneButtons('paused', L);
-  const dir = main.core.current ? main.core.current.dir : 0;
   for (let i = 0; i < btns.length; i++) {
     const b = btns[i];
-    if (b.id === 'resume' || b.id === 'restart' || b.id === 'tomenu') drawButton(ctx, b, L, dir, true);
+    if (b.id === 'resume' || b.id === 'restart' || b.id === 'tomenu') drawButton(ctx, b, L, true);
   }
+}
+
+/**
+ * 过关结算面板：本关成绩 + 下一关预告。
+ * 达标后 core 会挂起（pendingLevelUp），棋盘保持消行后的样子停在这一帧；
+ * 玩家点「进入第 N 关」→ main 调 core.confirmLevelUp() → 才清场开新关。
+ */
+function drawLevelClear(ctx, L, main) {
+  drawOverlay(ctx, L, 0.62);
+  const s = L.s, w = L.w, h = L.h;
+  const opts = main.sceneOpts ? main.sceneOpts() : {};
+  const rep = opts.report || {};
+  const px2 = 24 * s, pw = w - 48 * s;
+  const py2 = h * 0.10, ph = h * 0.62;
+  roundRect(ctx, px2, py2, pw, ph, 16 * s);
+  ctx.fillStyle = 'rgba(18,22,42,0.97)';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,213,79,0.35)';
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
+
+  text(ctx, '第 ' + (rep.level || 1) + ' 关 合格！', w / 2, py2 + 40 * s, 26 * s, '#ffd54f', 'center', true);
+  text(ctx, rep.name ? ('教学 · ' + rep.name) : '继续前进', w / 2, py2 + 62 * s, 12.5 * s,
+    'rgba(255,255,255,0.6)', 'center', false);
+
+  const rows = [
+    ['本关得分', '+' + (rep.gained || 0)],
+    ['累计分数', String(rep.score || 0) + ' / ' + (rep.target || 0)],
+    ['放下方块', (rep.locks || 0) + ' 块'],
+  ];
+  if (rep.lines) rows.push(['消除行数', rep.lines + ' 行']);
+  if (rep.turret) rows.push(['炮台击落', rep.turret + ' 格']);
+  if (rep.resonance) rows.push(['共鸣带走', rep.resonance + ' 格']);
+  if (rep.cardPicks) rows.push(['天赋牌', '已选 ' + rep.cardPicks + ' 张']);
+  rows.push(['本关用时', Math.max(1, Math.round((rep.ms || 0) / 1000)) + ' 秒']);
+
+  const ry0 = py2 + 88 * s, rowH = 23 * s;
+  for (let i = 0; i < rows.length; i++) {
+    const yy = ry0 + i * rowH;
+    text(ctx, rows[i][0], px2 + 26 * s, yy, 12.5 * s, 'rgba(255,255,255,0.58)', 'left', false);
+    text(ctx, rows[i][1], px2 + pw - 26 * s, yy, 13.5 * s, '#ffffff', 'right', true);
+  }
+
+  // 下一关预告：教学关给出本关目标，正式关点明「四向随机重力登场」
+  const ny = py2 + ph - 86 * s;
+  ctx.save();
+  ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(px2 + 20 * s, ny - 16 * s);
+  ctx.lineTo(px2 + pw - 20 * s, ny - 16 * s);
+  ctx.stroke();
+  ctx.restore();
+  text(ctx, '下一关 · 第 ' + (rep.next || 2) + ' 关' + (rep.nextName ? (' · ' + rep.nextName) : ''),
+    px2 + 26 * s, ny + 2 * s, 14 * s, rep.nextTutorial ? '#8ec5ff' : '#ffab91', 'left', true);
+  text(ctx, '合格分 ' + (rep.nextTarget || 0), px2 + pw - 26 * s, ny + 2 * s, 12 * s,
+    'rgba(255,215,79,0.9)', 'right', false);
+  ctx.font = 'bold ' + (11.5 * s) + 'px sans-serif';
+  const gl = wrapText(ctx, rep.nextGuide || (rep.nextTutorial ? '' : '四向随机重力登场 · 技能方块按概率出现'), pw - 52 * s, 2);
+  for (let i = 0; i < gl.length; i++) {
+    text(ctx, gl[i], px2 + 26 * s, ny + 22 * s + i * 16 * s, 11.5 * s, 'rgba(255,255,255,0.78)', 'left', false);
+  }
+
+  const btns = sceneButtons('levelclear', L, opts);
+  for (let i = 0; i < btns.length; i++) drawButton(ctx, btns[i], L, true);
 }
 
 function drawGameOver(ctx, L, main) {
@@ -1078,7 +1282,7 @@ function drawGameOver(ctx, L, main) {
   }
 
   const btns = sceneButtons('gameover', L, main.sceneOpts ? main.sceneOpts() : {});
-  for (let i = 0; i < btns.length; i++) drawButton(ctx, btns[i], L, undefined, true);
+  for (let i = 0; i < btns.length; i++) drawButton(ctx, btns[i], L, true);
 }
 
 /** 侧边栏复访任务面板（必接能力，官方指引：入口奖励 + 跳转侧边栏 + 复访领奖） */
@@ -1128,7 +1332,7 @@ function drawSidebar(ctx, L, main) {
   for (let i = 0; i < btns.length; i++) {
     const b = btns[i];
     const enabled = (b.id !== 'sidebarAction') || opts.sidebarSupported !== false;
-    drawButton(ctx, b, L, undefined, enabled);
+    drawButton(ctx, b, L, enabled);
   }
 }
 
@@ -1204,7 +1408,7 @@ function drawRank(ctx, L, main, t) {
   }
 
   const btns = sceneButtons('rank', L);
-  for (let i = 0; i < btns.length; i++) drawButton(ctx, btns[i], L, undefined, true);
+  for (let i = 0; i < btns.length; i++) drawButton(ctx, btns[i], L, true);
 }
 
 function drawHelp(ctx, L, main) {
@@ -1218,31 +1422,72 @@ function drawHelp(ctx, L, main) {
 
   text(ctx, '玩法说明', w / 2, py2 + 38 * s, 20 * s, '#ffffff', 'center', true);
   const lines = [
-    '· 方块从棋盘中心生成，箭头指示重力方向',
-    '· 下落前方块会停留片刻，提示类型与方向',
-    '· ◀ ▶ 按钮：沿垂直于重力的方向移动',
-    '· 点击棋盘任意处：旋转方块',
-    '· 沿重力方向滑动棋盘：快速落底',
-    '· 填满任意整行或整列即可消除得分',
-    '· 消除后只有贴近消除线的一侧沉降，另一半保持',
-    '· 合格分＝过关：棋盘清场、新关重开，积分累加',
-    '· 第 2 关起出现技能方块（金色炮台 / 青色共鸣）',
+    '· 方块从棋盘中心生成，箭头指示重力方向（第 7 关起四向随机）',
+    '· 上/下/左/右：按屏幕方向移动一格（按键位置固定，不随重力转）',
+    '· 翻转（十字正中）：旋转方块；也可直接点棋盘旋转',
+    '· 速降（十字右侧）：立刻落底锁定；沿重力方向滑动棋盘同样有效',
+    '· 第 1~6 关为教学关：重力恒向下、局面开局摆好，照着提示做',
+    '· 教学关要先随手玩几块、再做本关要教的动作，不会一块就跳关',
+    '· 分数够 + 动作练完 → 弹「过关结算」，点按钮才进下一关',
+    '· 填满任意整行或整列即可消除；消除一行 = 100 × 关卡分',
+    '· 消除后只有贴近消除线的一侧沉降，另一半保持原位',
+    '· 第 3 关起出现技能方块（金色炮台 / 青色共鸣）',
     '· 炮台＝落地发射能量弹，穿过自己方块击落别家',
     '· 共鸣＝被消除或被击落时，同类方格一起消失',
-    '· 被技能带走的方块各自放出技能（炮台会补射）',
-    '· 每 ' + CARD.INTERVAL + ' 分弹三张属性牌：子弹数 / 穿透 /',
-    '  反弹 / 共鸣范围 / 爆炸·激光… 本局永久生效',
-    '· 中心出生点被堵住时游戏结束',
+    '· 每 ' + CARD.INTERVAL + ' 分弹三张属性牌（子弹/穿透/反弹/共鸣范围…），本局生效',
+    '· 第 4 关教炮台天赋、第 6 关教共鸣天赋（只能选该系牌）',
+    '· 第 7 关起合格分还要求「本关净拿分」，四向随机重力登场',
+    '· 中心出生点被堵住时游戏结束（可复活一次）',
   ];
   for (let i = 0; i < lines.length; i++) {
-    text(ctx, lines[i], px2 + 22 * s, py2 + 72 * s + i * 25 * s, 12.5 * s, 'rgba(255,255,255,0.85)', 'left', false);
+    text(ctx, lines[i], px2 + 22 * s, py2 + 66 * s + i * 21.5 * s, 11.5 * s, 'rgba(255,255,255,0.85)', 'left', false);
   }
 
   const btns = sceneButtons('help', L);
-  for (let i = 0; i < btns.length; i++) drawButton(ctx, btns[i], L, undefined, true);
+  for (let i = 0; i < btns.length; i++) drawButton(ctx, btns[i], L, true);
 }
 
 /* ================= 总入口 ================= */
+
+/** 关卡选择页：第 1~6 关为教学关，之后是正式关（都能直接进，方便老玩家跳过教学） */
+function drawLevels(ctx, L, main, t) {
+  const s = L.s, w = L.w, h = L.h;
+  const total = LevelPlan.TOTAL_LEVELS;
+  const maxReached = main.maxLevel || 1;
+  text(ctx, '关卡选择', w / 2, h * 0.15, 26 * s, '#ffffff', 'center', true);
+  text(ctx, '第 1~' + LevelPlan.TUTORIAL.MAX_LEVEL + ' 关是教学关（固定重力向下 · 预置局面 · 手把手）',
+    w / 2, h * 0.15 + 24 * s, 12 * s, 'rgba(255,255,255,0.6)', 'center', false);
+  text(ctx, '已玩到第 ' + maxReached + ' 关 · 最高分 ' + (main.best || 0),
+    w / 2, h * 0.15 + 42 * s, 12 * s, 'rgba(255,215,79,0.85)', 'center', false);
+
+  const save = main.checkpoint || null;
+  const btns = sceneButtons('levels', L, {});
+  for (let i = 0; i < btns.length; i++) {
+    const b = btns[i];
+    if (!b.level) { drawButton(ctx, b, L, true); continue; }
+    const plan = LevelPlan.planFor(b.level);
+    const isSave = save && save.level === b.level;
+    ctx.save();
+    roundRect(ctx, b.x, b.y, b.w, b.h, 12 * s);
+    if (isSave) {
+      const g = ctx.createLinearGradient(b.x, b.y, b.x, b.y + b.h);
+      g.addColorStop(0, '#ff6b8a');
+      g.addColorStop(1, '#e63958');
+      ctx.fillStyle = g;
+    } else {
+      ctx.fillStyle = plan ? 'rgba(90,140,220,0.20)' : 'rgba(255,255,255,0.08)';
+    }
+    ctx.fill();
+    ctx.strokeStyle = isSave ? 'rgba(255,255,255,0.55)' : (plan ? 'rgba(140,180,255,0.5)' : 'rgba(255,255,255,0.18)');
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.restore();
+    const cx = b.x + b.w / 2;
+    text(ctx, String(b.level), cx, b.y + b.h * 0.44, 18 * s, '#ffffff', 'center', true);
+    text(ctx, plan ? plan.name : '正式关', cx, b.y + b.h - 7 * s, 9 * s,
+      plan ? 'rgba(170,205,255,0.9)' : 'rgba(255,255,255,0.45)', 'center', false);
+  }
+}
 
 function draw(main) {
   const ctx = main.ctx, L = main.L, t = Date.now();
@@ -1251,12 +1496,19 @@ function draw(main) {
     case 'menu':
       drawMenu(ctx, L, main, t);
       break;
+    case 'levels':
+      drawLevels(ctx, L, main, t);
+      break;
     case 'playing':
       drawGameScene(ctx, L, main, t);
       break;
     case 'cards':
       drawGameScene(ctx, L, main, t);
       drawCards(ctx, L, main);
+      break;
+    case 'levelclear':
+      drawGameScene(ctx, L, main, t);
+      drawLevelClear(ctx, L, main);
       break;
     case 'paused':
       drawGameScene(ctx, L, main, t);

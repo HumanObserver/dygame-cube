@@ -189,17 +189,88 @@ assert.strictEqual(main.state, 'rank', 'rank 场景');
 tapBtn('back');
 assert.strictEqual(main.state, 'menu', 'rank 返回 menu');
 
-/* 开始游戏 */
+/* ---------- 教学关（第 1~6 关）：固定向下重力 + 过关结算 + 开局断点 ---------- */
 tapBtn('start');
 assert.strictEqual(main.state, 'playing', '开始游戏');
+assert.strictEqual(main.core.level, 1, '新对局从第 1 关（教学）开始');
+assert.strictEqual(main.core.plan && main.core.plan.setup, 'starter', '第 1 关应铺教学局面');
+assert.ok(main.checkpoint && main.checkpoint.level === 1, '开局应存下关卡断点');
 
-/* 完整一局：横向铺开 + 沿重力滑动硬降，直到 gameover
- * （若全部堆在中心列，几块就会堵住中心出生点提前结束；铺开可对局更长、覆盖消行/升级路径） */
+let tutGuard = 0;
+let sawPanel = false;
+while (main.core.level === 1 && tutGuard++ < 400) {
+  if (main.state === 'levelclear') { sawPanel = true; break; }
+  if (main.state !== 'playing') { frames(2, 50); continue; }
+  frames(2, 50);
+  const cur = main.core.current;
+  if (!cur || !main.core.canControl()) continue;
+  assert.strictEqual(cur.dir, 0, '教学关重力恒为向下');
+  // 把方块对齐底行缺口，然后按「速降」键：门槛要求亲手消一行 + 再多玩几块
+  const cells = main.core.cells(cur);
+  let sum = 0;
+  for (let i = 0; i < cells.length; i++) sum += cells[i].x;
+  const cx0 = Math.round(sum / cells.length);
+  for (let m = 0; m < Math.abs(cx0 - 10); m++) main.core.moveDir(cx0 > 10 ? 1 : 3);
+  tapBtn('drop');
+  frames(2, 50);
+  if (main.core.pendingCards) { tapBtn('card0'); frames(2, 50); }
+}
+assert.ok(sawPanel, '分数 + 门槛都达成后应弹「过关结算」，而不是直接跳关');
+assert.strictEqual(main.core.level, 1, '结算未确认 → 仍停在第 1 关');
+assert.ok(main.core.levelStats.clears >= 1, '第 1 关应完成消行教学');
+assert.ok(main.core.locksInLevel >= 5, '过关前应先自由玩几块，实际=' + main.core.locksInLevel);
+assert.ok(main.core.score > 0, '教学关应有得分');
+frames(3); // 真正画一遍结算面板（drawLevelClear 分支）
+const rep = main.core.pendingLevelUp;
+assert.ok(rep && rep.next === 2 && rep.target > 0 && rep.locks >= 5, '结算应带本关成绩与下一关预告');
+tapBtn('nextLevel');
+frames(2, 50);
+assert.strictEqual(main.state, 'playing', '确认后回到对局');
+assert.strictEqual(main.core.level, 2, '确认后升入第 2 关');
+assert.strictEqual(main.core.plan && main.core.plan.setup, 'clearRow', '第 2 关铺消除缺口');
+assert.ok(main.checkpoint && main.checkpoint.level === 2, '进入新关后断点应更新到第 2 关');
+console.log('教学关 OK — 结算面板 → 第' + main.core.level + '关 落块' + rep.locks
+  + ' 消行' + rep.lines + ' score=' + main.core.score + ' 断点=第' + main.checkpoint.level + '关');
+
+/* ---------- 断点续玩：新会话从「继续 · 第 N 关」接上 ---------- */
+main.setState('menu');
+frames(2);
+const progressMod = require('../js/progress.js');
+const saved = progressMod.load();
+assert.ok(saved && saved.level >= 2, '关卡开局断点应已落盘, 实际=' + JSON.stringify(saved));
+main.checkpoint = saved; // 模拟重开一次会话：菜单读到上次的断点
+tapBtn('resume');
+assert.strictEqual(main.state, 'playing', '菜单「继续」应直接进游戏');
+assert.strictEqual(main.core.level, saved.level, '续玩关卡与断点一致');
+assert.strictEqual(main.core.score, saved.score, '续玩分数与断点一致');
+assert.ok(main.core.plan, '续玩仍带教学脚本');
+console.log('断点续玩 OK — 第' + main.core.level + '关 / ' + main.core.score + '分');
+
+/* ---------- 关卡选择 → 正式关（四向随机重力）跑完整一局 ---------- */
+main.onButton('levels');
+assert.strictEqual(main.state, 'levels', '关卡选择场景');
+frames(2); // 真正画一遍选关页（含 drawLevels 分支）
+main.onButton('level7');
+assert.strictEqual(main.state, 'playing', '选关直接进入第 7 关');
+assert.strictEqual(main.core.level, 7, '应为第 7 关');
+assert.ok(!main.core.plan, '第 7 关起不再是教学关');
+
+/* 完整一局：横向铺开 + 硬降（每 7 块改压一次「下滑方向滑动」），直到 gameover
+ * （若全部堆在中心列，几块就会堵住中心出生点提前结束；铺开可对局更长） */
 const seenDirs = new Set();
 let guard = 0;
 let pieceIdx = 0;
-while (main.state === 'playing' && guard++ < 4000) {
+let panelCount = 0;
+while ((main.state === 'playing' || main.state === 'levelclear' || main.state === 'cards') && guard++ < 4000) {
   frames(2, 50); // 每轮推进 ~100ms（loop 内 dt 上限 100）
+  if (main.core.pendingCards) { tapBtn('card0'); frames(2, 50); }
+  if (main.state === 'levelclear') {
+    panelCount++;
+    frames(2); // 结算面板也画一帧
+    tapBtn('nextLevel');
+    continue;
+  }
+  if (main.state !== 'playing') continue;
   const cur = main.core.current;
   if (!cur) continue;
   seenDirs.add(cur.dir);
@@ -209,11 +280,13 @@ while (main.state === 'playing' && guard++ < 4000) {
     const moves = 1 + (pieceIdx % 4);
     for (let m = 0; m < moves; m++) main.core.movePerp(side);
     pieceIdx++;
-    const d = DIRS[cur.dir];
-    const B = main.L.board;
-    const cx = B.x + B.size / 2;
-    const cy = B.y + B.size / 2;
-    swipe(cx, cy, cx + d.x * 140, cy + d.y * 140);
+    if (pieceIdx % 7 === 0) {
+      // 顺带压一遍「屏幕方向滑动」输入：向下快滑 = 速降
+      const B = main.L.board;
+      swipe(B.x + B.size / 2, B.y + B.size / 2, B.x + B.size / 2, B.y + B.size / 2 + 140);
+    } else {
+      main.core.hardDrop();
+    }
     frames(2, 50);
   }
 }
@@ -241,15 +314,18 @@ tapBtn('tomenu');
 assert.strictEqual(main.state, 'menu', '回主菜单');
 
 console.log('主流程 OK — score=' + main.core.score + ' level=' + main.core.level +
-  ' lines=' + main.core.lines + ' dirs=[' + [...seenDirs].join(',') + '] guard=' + guard);
+  ' lines=' + main.core.lines + ' dirs=[' + [...seenDirs].join(',') + '] guard=' + guard +
+  ' 结算面板=' + panelCount);
 
-/* playing 场景四个控制按钮 */
+/* playing 场景：固定十字五键 + 速降（按键不随重力旋转） */
 tapBtn('start');
 frames(30, 50); // 1500ms > hint(1000ms)，进入 fall
 assert.strictEqual(main.core.phase, 'fall', '应处于 fall 阶段, 实际=' + main.core.phase);
+tapBtn('up');
 tapBtn('left');
-tapBtn('rotate');
+tapBtn('flip');
 tapBtn('right');
+tapBtn('down');
 tapBtn('drop');
 frames(3);
 console.log('控制按钮 OK');
@@ -258,15 +334,21 @@ console.log('控制按钮 OK');
 rankMod.share(main.core.score);
 assert.strictEqual(shareCount, 1, 'shareAppMessage 应被调用');
 
-/* ---------- 新玩法冒烟：半侧沉降 / 过关清场 / 炮台 / 共鸣 / 属性牌 ---------- */
+/* ---------- 新玩法冒烟：半侧沉降 / 过关结算 / 炮台 / 共鸣 / 属性牌 ---------- */
 const Skills = require('../js/skills.js');
 const { SHAPES } = require('../js/tetromino.js');
 const { ROWS: SR, COLS: SC, CARD: SCARD, LEVEL_TARGETS: SLT, SKILL: SSK } = require('../js/config.js');
 
+/** 机制冒烟专用：手动摆棋盘 + 硬降，教学脚本的预置局面会干扰断言 → 关掉教学关 */
 function freshGame() {
   main.onButton('start');
   frames(2, 50);
   assert.strictEqual(main.state, 'playing');
+  main.core.tutorialOn = false;
+  delete main.core.levelTarget; // 清掉上一段可能留下的「屏蔽升关」钩子
+  main.core.startLevel(1);      // 空棋盘重开（教学关预置局面已随 tutorialOn 关闭）
+  frames(2, 50);
+  assert.strictEqual(main.core.board.allCells().length, 0, '机制冒烟应从空棋盘开始');
   return main.core;
 }
 
@@ -274,6 +356,7 @@ function freshGame() {
 {
   const core = freshGame();
   core.level = 1;
+  core.levelTarget = () => Infinity; // 只验沉降：别让达标把棋盘清掉
   const row = [];
   for (let c = 0; c < SC; c++) row.push({ x: c, y: 10 });
   core.board.lock(row, 'I');
@@ -288,7 +371,7 @@ function freshGame() {
   assert.strictEqual(core.board.grid[16][2], 'T', '下半应保持原位');
 }
 
-/* 2) 过关清场：积分累加、棋盘清空 */
+/* 2) 过关结算：达标先弹面板，确认后才清场、积分累加 */
 {
   const core = freshGame();
   core.score = SLT[0] - 100;
@@ -300,8 +383,14 @@ function freshGame() {
   core.current = { type: 'O', matrix: SHAPES.O, dir: 0, x: SC - 2, y: SR - 3 };
   core.hardDrop();
   frames(2, 50);
-  assert.strictEqual(core.level, 2, '合格分达成 → 第 2 关');
+  assert.strictEqual(main.state, 'levelclear', '合格分达成 → 先弹「过关结算」');
+  assert.strictEqual(core.level, 1, '未确认不跳关');
+  assert.ok(core.board.allCells().length > 0, '结算期间棋盘停在最后一帧');
+  tapBtn('nextLevel');
+  frames(2, 50);
+  assert.strictEqual(core.level, 2, '确认后进入第 2 关');
   assert.strictEqual(core.board.allCells().length, 0, '过关应清场');
+  assert.strictEqual(main.state, 'playing', '确认后回到对局');
   assert.ok(core.score >= SLT[0], '积分累加不清零: ' + core.score);
   assert.ok(main.fx.length > 0 || main.toast, '过关应有动效或提示');
 }
@@ -364,6 +453,7 @@ function freshGame() {
 /* 5) 属性牌：三选一场景进入 / 选择 / 跳过 */
 {
   const core = freshGame();
+  core.levelTarget = () => Infinity; // 这段只验发牌：别让 700 分顺手把过关结算弹出来
   core.score = SCARD.INTERVAL;
   core._syncCards();
   frames(2, 50);
@@ -387,7 +477,7 @@ function freshGame() {
   assert.strictEqual(core.cardPicks.length, 1, '跳过不记录选择');
   main.setState('menu'); frames(2);
 }
-console.log('新玩法冒烟 OK — 半侧沉降 / 过关清场 / 炮台 / 共鸣 / 属性牌');
+console.log('新玩法冒烟 OK — 半侧沉降 / 过关结算 / 炮台 / 共鸣 / 属性牌');
 
 /* ---------- 平台能力冒烟：侧边栏复访 / 桌面 / 订阅 / 广告金币 / 复活 / 插屏 ---------- */
 const platform = require('../js/platform.js');
@@ -471,9 +561,10 @@ main.setState('menu'); frames(2);
 console.log('平台能力 OK — coins=' + platform.getCoins() +
   ' navigateToScene=' + mock.navigateToScene + ' interstitial=' + mock.interstitial);
 
-/* 重力方向随机性直测：独立 rng（不干扰主流程随机流），空棋盘反复 spawn 200 次 */
+/* 重力方向随机性直测：独立 rng（不干扰主流程随机流），空棋盘反复 spawn 200 次
+ * （教学关第 1~6 关重力恒向下，这里要验的是正式关的四向随机 → tutorial:false） */
 const GameCore = require('../js/gamecore.js');
-const gc = new GameCore({ rng: mulberry32(7) });
+const gc = new GameCore({ rng: mulberry32(7), tutorial: false });
 const dirTally = [0, 0, 0, 0];
 for (let i = 0; i < 200; i++) {
   gc.spawn();

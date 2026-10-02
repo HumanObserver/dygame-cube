@@ -339,15 +339,23 @@ function cardById(id) {
   return null;
 }
 
-/** 当前可出现的牌（已满级 / 已装备的排除） */
-function availableCards(mods) {
-  return CARD_POOL.filter((c) => !c.maxed(mods));
+/** 当前可出现的牌（已满级 / 已装备的排除）；tag 限定牌系（教学关用：只发某一系列） */
+function availableCards(mods, tag) {
+  const list = CARD_POOL.filter((c) => !c.maxed(mods));
+  return tag ? list.filter((c) => c.tag === tag) : list;
 }
 
-/** 随机抽 n 张可选择的牌（不足则返回全部可用；池子见底返回空数组＝跳过） */
-function offerCards(rng, mods, n) {
+/**
+ * 随机抽 n 张可选择的牌（不足则返回全部可用；池子见底返回空数组＝跳过）
+ * @param tag 限定牌系（'turret' / 'resonance' / 'common'）；该系不足 n 张时用其余可用牌补位
+ */
+function offerCards(rng, mods, n, tag) {
   const count = n === undefined ? CARD.CHOICES : n;
-  const pool = availableCards(mods).slice();
+  const pool = availableCards(mods, tag).slice();
+  if (tag && pool.length < count) {
+    const extra = availableCards(mods).filter((c) => pool.indexOf(c) < 0);
+    for (let i = 0; i < extra.length && pool.length < count; i++) pool.push(extra[i]);
+  }
   for (let i = pool.length - 1; i > 0; i--) {
     const j = Math.floor(rng() * (i + 1));
     const t = pool[i];
